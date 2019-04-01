@@ -9,7 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 
+/////////////////////////////////Constants, types/////////////////////////////////
 
 #define MAXN 50
 #define MAXN_LENGTH 2
@@ -19,39 +21,108 @@
 #define MAX_ENTRY_COUNT 32
 //#define MAX_BUFFER_SIZE (MAX_ENTRY_SIZE * MAX_ENTRY_COUNT)
 #define ID_SIZE 5
+#define MAX_LOAD_FACTOR 0.75
+#define True 1
+#define False 0
+
+typedef unsigned long long ull;
+const ull z = 7;
 
 size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 
-// _Generic keyword is a part of C11 !
-//#define print(X) _Generic((X), \
-//    int: printInt,\
-//    float: printDouble,\
-//    double: printDouble\
-//)(X)
 
+/////////////////////////////////Data structures/////////////////////////////////
+///Linked List///
+typedef struct node {
+    void *data;
+    struct node *next, *prev;
+} Node;
+
+void printList(Node *node, void (*print_function)(void *));
+
+// functions for different representation of void* in list nodes
+void printInt(void *n);
+
+void printDouble(void *f);
+
+void printString(void *s);
+
+void printSubject(void *c);
+
+void printFaculty(void *f);
+
+void printStudent(void *s);
+
+void pushFront(Node **head, void *data, size_t size);
+
+///Hash Map///
+typedef struct hash_node {
+    void *key;
+    void *value;
+    struct hash_node *next;
+    struct hash_node *prev;
+} HashNode;
+
+typedef struct {
+    HashNode *head;
+    HashNode *tail;
+} HashList;
+
+typedef struct {
+    HashList *datalist;
+    size_t size, capacity;
+    size_t key_size, value_size;
+
+    int (*key_comparator)(void *, void *);
+    /* 1: key1 > key2
+     * 0: key1 = key2 actually, only this need (!!!)
+     * -1 key1 < key2
+     */
+} HashTable;
+
+ull hash(const void *data, size_t size);
+
+void free_hash_entry(HashNode *node);
+
+void init_datalist(HashList *datalist, size_t capacity);
+
+void hash_table_init(HashTable *table, size_t capacity, size_t key_size,
+                     size_t value_size, int (*key_cmp)(void *, void *));
+
+void insert(HashTable *table, void *key, void *value);
+
+void free_hash_table(HashTable *table);
+
+void rehash(HashTable *table);
+
+void *get_el(HashTable *table, void *key);
+
+void remove_el(HashTable *table, void *key);
+
+//WARNING! Returns a pointer to actual node in table
+HashNode *find_node(HashTable *table, void *key);
+
+
+/////////////////////////////////Data structures/////////////////////////////////
 typedef enum Status {
     PROFESSOR, TA, STUDENT
 } status;
 
 ///BASIC DATA STRUCTURES///
-typedef struct node {
-    void *data;
-    struct node *next;
-} Node;
 
-typedef struct course {
+typedef struct subject {
     char *name;
     int required_labs;
     int allowed_students;
-} Course;
+    int selectedCount; //how many student selected this course
+} Subject;
 
 
-//TA and Prof are both faculty, but TA must have only 1 "trained for"
+//TA and Prof are both faculty, but TA can be assigned only to those courses that he/she can teach
 typedef struct faculty {
-    char *name;
+    char *fullname;
     int trained_for_count;
     Node *trained_for; // array for strings - names of courses
-//    char **trained_for;
 } Faculty;
 
 typedef struct student {
@@ -59,8 +130,99 @@ typedef struct student {
     char *ID;
     int required_courses_count;
     Node *required_courses;
-//    char **required_courses;
 } Student;
+
+
+///Genetic data structures///
+typedef struct prof {
+    Faculty *professor;
+    char isDoingWrongSubject; // bool
+    Node *courses; // what courses prof teaches
+} ProfessorGenetic;
+
+typedef struct ta {
+    Faculty *TA;
+    Node *courses; // what courses prof teaches
+} TAGenetic;
+
+typedef struct course {
+    Subject *subject;
+    ProfessorGenetic *prof;
+    Node *TAs;
+} CourseGenetic;
+
+typedef struct individ {
+    Node *schedule; //list of courses
+    Node *professors;
+    Node *TAs;
+} Individual;
+
+/////////////////////////////////Utility functions and constructors/////////////////////////////////
+///Constructors//
+//Creation procedures:
+//All of them fills the fields of stuct, given pre-allocated pointer to the struct
+void new_subject(Subject *new, char *name, int labs, int students);
+
+void new_faculty(Faculty *new, char *first_name, char *last_name);
+
+void new_student(Student *new, char *first_name, char *last_name, char *ID);
+
+///ProfessorGenetic///
+char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course);
+
+char /*Bool*/ isBusy(ProfessorGenetic *prof);
+
+void AssignToProf(ProfessorGenetic *prof, CourseGenetic *course);
+
+char /*Bool*/ CanTeachSubject(ProfessorGenetic *prof, Subject *subj);
+
+int errorProf(ProfessorGenetic *prof);
+
+
+///TAGenetic///
+char /*Bool*/ isAvailableTA(TAGenetic *ta, CourseGenetic *course);
+
+int errorTA(TAGenetic *ta);
+
+void AssignToTA(TAGenetic *ta, CourseGenetic *course);
+
+///CourseGenetic///
+int errorCourse(CourseGenetic *course);
+
+char /*Bool*/ willRun(CourseGenetic *course);
+
+///Individual///
+int errorIndividual(Individual *individual);
+
+/////////////////////////////////Functions used for solving/////////////////////////////////
+void printEmail(); //TODO don't forget to call it
+
+void solve();
+
+int parseInput();
+
+/////////////////////////////////Generic macroses/////////////////////////////////
+
+#define isAvailable(X, Y) _Generic((X), \
+    ProfessorGenetic*: isAvailableProf \
+    TAGenetic*: isAvailableTA\
+)(X, Y)
+
+#define AssignTo(X, Y) _Generic((X), \
+    ProfessorGenetic*: AssignToProf\
+    TAGenetic*: AssignToTA\
+)(X, Y)
+
+#define error(X) _Generic((X), \
+    ProfessorGenetic*: errorProf\
+    TAGenetic*: errorTA\
+    CourseGenetic*: errorCourse\
+    Individual*: errorIndividual\
+)(X)
+
+/////////////////////////////////Global variables/////////////////////////////////
+char *global_buffer;
+HashTable *subjectByName = NULL;
 
 
 ///UTIL FUNCTIONS///
@@ -71,97 +233,14 @@ void empty(char *str, size_t size) {
     }
 }
 
-///Operations on structs//
-//Creation procedures:
-//All of them fills the fields of stuct, given pre-allocated pointer to the struct
-void new_course(Course *new, char *name, int labs, int students) {
-    if (new == NULL)
-        return;
-    new->name = malloc(strlen(name) + 1);
-    strcpy(new->name, name);
-    new->required_labs = labs;
-    new->allowed_students = students;
-}
-
-void new_faculty(Faculty *new, char *first_name, char *last_name) {
-    if (new == NULL)
-        return;
-    // full_name ="<first_name> <last_name><\0>"
-    size_t name_length = strlen(first_name) + strlen(last_name) + 2;
-    char *full_name = (char *) malloc(name_length);
-    empty(full_name, name_length);
-    char *to_append = strcat(full_name, first_name);
-    to_append = strcat(to_append, " ");
-    strcat(to_append, last_name);
-
-
-    new->name = malloc(strlen(full_name) + 1);
-    strcpy(new->name, full_name);
-    new->trained_for_count = 0;
-    new->trained_for = NULL;
-
-    free(full_name);
-}
-
-void new_student(Student *new, char *first_name, char *last_name, char *ID) {
-    if (new == NULL)
-        return;
-    size_t name_length = strlen(first_name) + strlen(last_name) + 2;
-    char *full_name = (char *) malloc(name_length);
-    empty(full_name, name_length);
-    char *to_append = strcat(full_name, first_name);
-    to_append = strcat(to_append, " ");
-    strcat(to_append, last_name);
-
-//    printf("Got fullname:|%s|\n", full_name);
-
-    new->name = malloc(strlen(full_name) + 1);
-    strcpy(new->name, full_name);
-    new->ID = malloc(ID_SIZE + 1); // 5 chars + \0
-    strcpy(new->ID, ID);
-    new->required_courses_count = 0;
-    new->required_courses = NULL;
-
-    free(full_name);
-
-}
-
-///LIST OPERATIONS///
-void printList(Node *node, void (*print_function)(void *));
-
-// functions for different representation of void* in list nodes
-void printInt(void *n);
-
-void printDouble(void *f);
-
-void printString(void *s);
-
-void printCourse(void *c);
-
-void printFaculty(void *f);
-
-void printStudent(void *s);
-
-void pushFront(Node **head, void *data, size_t size);
-
-
-///TASK FUNCTIONS///
-void printEmail(); //TODO don't forget to call it
-
-void solve();
-
-int parseInput();
-
-///GLOBAL VARIABLES///
-//char global_buffer[MAX_BUFFER_SIZE];
-
-char *global_buffer;
-
 // removes \n from global_buffer
 void trim() {
     if (global_buffer[strlen(global_buffer) - 1] == '\n') global_buffer[strlen(global_buffer) - 1] = '\0';
 }
 
+int cmpStr(void *s1, void *s2) {
+    return strcmp((char *) s1, (char *) s2);
+}
 
 int main() {
     global_buffer = (char *) malloc(MAX_BUFFER_SIZE);
@@ -187,65 +266,6 @@ int main() {
 //    printList(start, printDouble);
 
     return 0;
-}
-
-
-void printInt(void *n) {
-    printf(" %d", *(int *) n);
-}
-
-
-void printDouble(void *f) {
-    printf(" %f", *(double *) f);
-}
-
-void printString(void *s) {
-    printf(" %s", (char *) s);
-}
-
-void printCourse(void *c) {
-    Course *course = (Course *) c;
-    printf("Course: %s\nLabs: %d\nStudents: %d\n\n", course->name, course->required_labs, course->allowed_students);
-}
-
-void printFaculty(void *f) {
-    Faculty *faculty = (Faculty *) f;
-    printf("Faculty: %s\n", faculty->name);
-    printList(faculty->trained_for, printString);
-    printf("\n\n");
-}
-
-void printStudent(void *s) {
-    Student *student = (Student *) s;
-    printf("Student: %s\nID: %s\nRequirements:", student->name, student->ID);
-    printList(student->required_courses, printString);
-    printf("\n\n");
-}
-
-//TODO: for some reason valgrind says, that pushFront leaks
-void pushFront(Node **head, void *data, size_t size) {
-    Node *new_node = (Node *) malloc(sizeof(Node));
-    if (new_node == NULL) {
-        perror("Memory for new node was not allocated");
-        exit(1);
-    }
-
-    new_node->data = malloc(size);
-    new_node->next = (*head);
-
-    //copy value of data
-    memcpy(new_node->data, data, size);
-
-
-    (*head) = new_node;
-}
-
-void printList(Node *node, void (*print_function)(void *)) {
-    while (node != NULL) {
-        (*print_function)(node->data);
-        node = node->next;
-
-    }
 }
 
 void printEmail() {
@@ -275,27 +295,31 @@ void solve() {
             int TAs_count = 0;
             int students_count = 0;
 
+            subjectByName = (HashTable *) malloc(sizeof(HashTable));
+            hash_table_init(subjectByName, 5, MAX_ENTRY_SIZE, sizeof(Node *), cmpStr);
+
             if (parseInput(&courses, &profs, &TAs, &students) != 0) {
                 printf("Invalid input.");
                 continue;
             }
 
+
             printf("\n------------\n");
-            printList(courses, printCourse);
+            printList(courses, printSubject);
             printf("\n------------\n");
             printList(profs, printFaculty);
             printf("\n------------\n");
             printList(TAs, printFaculty);
-            printf("\n------------\n");
-            printList(students, printStudent);
-
+//            printf("\n------------\n");
+//            printList(students, printStudent);
+            printf("lol");
         }
     }
 
 }
 
-int parseInput(Node **courses, Node **profs, Node **TAs, Node **students) {
-    //reading courses, until "P" is met
+int parseInput(Node **subjects, Node **profs, Node **TAs, Node **students) {
+    //reading subjects, until "P" is met
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1 && strcmp(global_buffer, "P\n") != 0) {
 
         trim();
@@ -304,9 +328,10 @@ int parseInput(Node **courses, Node **profs, Node **TAs, Node **students) {
         int labs_required, students_allowed;
 
         sscanf(global_buffer, "%s %d %d", course_name, &labs_required, &students_allowed);
-        Course *n = (Course *) malloc(sizeof(Course));
-        new_course(n, course_name, labs_required, students_allowed);
-        pushFront(courses, n, sizeof(Course));
+        Subject *n = (Subject *) malloc(sizeof(Subject));
+        new_subject(n, course_name, labs_required, students_allowed);
+        pushFront(subjects, n, sizeof(Subject));
+        insert(subjectByName, course_name, *subjects);
 
         free(course_name);
         free(n);
@@ -327,7 +352,7 @@ int parseInput(Node **courses, Node **profs, Node **TAs, Node **students) {
         }
         trim();
         // tokenize given string by spaces
-        // the format is always like {name} {surname} <{ID}> {List of courses}
+        // the format is always like {fullname} {surname} <{ID}> {List of subjects}
         char *token = strtok(global_buffer, " ");
         char *name = malloc(strlen(token) + 1);
         strcpy(name, token);
@@ -342,19 +367,32 @@ int parseInput(Node **courses, Node **profs, Node **TAs, Node **students) {
         char *student_id = NULL;
 
         while (token != NULL) {
+
             pushFront(&head, token, strlen(token));
             len++;
             // for student his ID will be in the end of the list, so catch node that will be before ID and later retrieve the id
             if (status == STUDENT && len == 2) {
                 student_id_ancestor = head;
             }
+            // if list of required courses for student started
+            if (len >= 2 && status == STUDENT) {
+                void *subj = get_el(subjectByName, token);
+                if (subj == NULL) {
+                    return 1; // student requires the course that doesn't exists
+                }
+                Subject *t = (Subject *) (((Node *) (subj))->data);
+                t->selectedCount++;
+                free(subj);
+            }
             token = strtok(NULL, " ");
         }
 
         // for student retrieve his ID
         if (status == STUDENT && student_id_ancestor != NULL) {
+//            printList(student_id_ancestor, printString);
+//            printf(" something\n");
             if (strlen(student_id_ancestor->next->data) != 5) {
-                return 1;
+                return 1; // ID's length is more than 5 chars
             } else {
                 student_id = (char *) malloc(ID_SIZE + 1);
                 strcpy(student_id, student_id_ancestor->next->data);
@@ -405,7 +443,305 @@ int parseInput(Node **courses, Node **profs, Node **TAs, Node **students) {
     if (status != STUDENT) return 1;
     //TODO: check if at least 1 student was introduced
 
-
-
     return 0;
 }
+
+
+/////////////////////////////////Data structures/////////////////////////////////
+///Linked List///
+void printInt(void *n) {
+    printf(" %d", *(int *) n);
+}
+
+
+void printDouble(void *f) {
+    printf(" %f", *(double *) f);
+}
+
+void printString(void *s) {
+    printf(" %s", (char *) s);
+}
+
+void printSubject(void *c) {
+    Subject *subject = (Subject *) c;
+    printf("Subject: %s\nLabs: %d\nStudents: %d\nRequired by %d students\n\n", subject->name, subject->required_labs,
+           subject->allowed_students, subject->selectedCount);
+}
+
+void printFaculty(void *f) {
+    Faculty *faculty = (Faculty *) f;
+    printf("Faculty: %s\n%d) ", faculty->fullname, faculty->trained_for_count);
+    printList(faculty->trained_for, printString);
+    printf("\n\n");
+}
+
+void printStudent(void *s) {
+    Student *student = (Student *) s;
+    printf("Student: %s\nID: %s\nRequirements:", student->name, student->ID);
+    printList(student->required_courses, printString);
+    printf("\n\n");
+}
+
+//TODO: for some reason valgrind says, that pushFront leaks
+void pushFront(Node **head, void *data, size_t size) {
+    Node *new_node = (Node *) malloc(sizeof(Node));
+    if (new_node == NULL) {
+        perror("Memory for new node was not allocated");
+        exit(1);
+    }
+
+    new_node->data = malloc(size);
+    new_node->next = (*head);
+    if (*head != NULL)
+        (*head)->prev = new_node;
+    new_node->prev = NULL;
+
+    //copy value of data
+    memcpy(new_node->data, data, size);
+
+
+    (*head) = new_node;
+}
+
+void printList(Node *node, void (*print_function)(void *)) {
+    while (node != NULL) {
+        (*print_function)(node->data);
+        node = node->next;
+
+    }
+}
+
+///Hash Map///
+
+ull hash(const void *data, size_t size) {
+    char *i = (char *) data;
+    ull result = 0;
+    ull mult = 1;
+    for (int j = 0; j < size; j++, i++) {
+        if (*i == '\0') // now map works only for string keys
+            break;
+        result += mult * (*i);
+        result %= ULLONG_MAX; // just in case of overflow
+        mult *= z;
+    }
+    return result;
+}
+
+void free_hash_entry(HashNode *node) {
+    if (node != NULL) {
+        if (node->key != NULL) free(node->key);
+        if (node->value != NULL) free(node->value);
+    }
+}
+
+
+void
+hash_table_init(HashTable *table, size_t capacity, size_t key_size, size_t value_size, int (*key_cmp)(void *, void *)) {
+    table->key_size = key_size;
+    table->value_size = value_size;
+    table->capacity = capacity;
+    table->datalist = (HashList *) malloc(capacity * sizeof(HashList));
+    table->key_comparator = key_cmp;
+    table->size = 0;
+    init_datalist(table->datalist, capacity);
+}
+
+void insert(HashTable *table, void *key, void *value) {
+    ull index = hash(key, table->key_size) % table->capacity;
+
+//    printf("%s -> %d\n", (char*)key, index);
+
+    HashNode *node = (table->datalist[index]).head;
+
+    HashNode *item = (HashNode *) malloc(sizeof(HashNode));
+    item->key = malloc(table->key_size);
+    item->value = malloc(table->value_size);
+    item->next = NULL;
+    item->prev = NULL;
+    memcpy(item->key, key, table->key_size);
+    memcpy(item->value, value, table->value_size);
+
+    if (node == NULL) {
+        // definetely no item
+        (table->datalist)[index].head = item;
+        (table->datalist)[index].tail = item;
+        table->size++;
+    } else {
+        // iterate over the list. If needed node is not present - add to the
+        // list
+        while (node != NULL) {
+            if (table->key_comparator(node->key, key) == 0) {
+                memcpy(node->value, value, table->value_size);
+                free_hash_entry(item);
+                free(item);
+                break;
+            }
+            node = node->next;
+        }
+        if (node == NULL) {
+            (table->datalist)[index].tail->next = item;
+            (table->datalist)[index].tail = item;
+            table->size++;
+        }
+
+    }
+
+    double load_factor = (1.0 * table->size) / table->capacity;
+    if (load_factor >= MAX_LOAD_FACTOR) {
+        rehash(table);
+    }
+}
+
+
+void free_hash_table(HashTable *table) {
+    if (table != NULL) {
+        HashNode *node = NULL;
+        for (int i = 0; i < table->capacity; ++i) {
+            //start from tail
+            node = table->datalist[i].tail;
+            //if hash_list is empty - go next
+            if (node == NULL) continue;
+            //until node passed the head of a hash_list, free it, then move_back
+            while (node != NULL) {
+                if (node != table->datalist[i].tail) free(node->next);
+                free_hash_entry(node);
+                node = node->prev;
+                table->size--;
+            }
+            if (table->size == 0) break;
+        }
+        free(table->datalist);
+        free(table);
+
+    }
+}
+
+void rehash(HashTable *table) {
+    HashList *old = table->datalist;
+    HashTable *temp = malloc(sizeof(HashTable));
+    hash_table_init(temp, 2 * table->capacity, table->key_size, table->value_size, table->key_comparator);
+
+    for (int i = 0; i < table->capacity; ++i) {
+        HashNode *list = old[i].head;
+        // if hash_list contains anything, insert it into a new ht
+        while (list != NULL) {
+            insert(temp, list->key, list->value);
+            list = list->next;
+        }
+    }
+    table->capacity *= 2;
+    table->datalist = temp->datalist;
+    printf("New size: %d\n", table->capacity);
+    free(temp);
+}
+
+
+void init_datalist(HashList *datalist, size_t capacity) {
+    for (size_t i = 0; i < capacity; i++) {
+        datalist[i].head = NULL;
+        datalist[i].tail = NULL;
+    }
+}
+
+//WARNING! Returns a pointer to actual node in table
+HashNode *find_node(HashTable *table, void *key) {
+//    printf("find(%s) -> %d\n", (char *) key, hash(key, table->key_size) % table->capacity);
+    HashNode *node = table->datalist[hash(key, table->key_size) % table->capacity].head;
+    while (node != NULL) {
+        if (table->key_comparator(key, node->key) == 0) {
+            return node;
+        }
+        node = node->next;
+    }
+    return NULL;
+}
+
+void *get_el(HashTable *table, void *key) {
+    HashNode *tmp = find_node(table, key);
+    if (tmp != NULL) {
+        void *result = malloc(table->value_size);
+        memcpy(result, tmp->value, table->value_size);
+        return result;
+    } else {
+        return NULL;
+    }
+}
+
+void remove_el(HashTable *table, void *key) {
+    HashNode *tmp = find_node(table, key);
+    if (tmp != NULL) {
+        size_t index = hash(key, table->key_size) % table->capacity;
+        if (tmp->next != NULL && tmp->prev != NULL) {
+            tmp->prev->next = tmp->next;
+            tmp->next->prev = tmp->prev;
+
+        } else if (tmp->prev != NULL) {
+            tmp->prev->next = NULL;
+            table->datalist[index].tail = tmp->prev;
+        } else if (tmp->next != NULL) {
+            tmp->next->prev = NULL;
+            table->datalist[index].head = tmp->next;
+        } else {
+            table->datalist[index].tail = NULL;
+            table->datalist[index].head = NULL;
+        }
+        free(tmp->key);
+        free(tmp->value);
+        free(tmp);
+    }
+}
+
+void new_subject(Subject *new, char *name, int labs, int students) {
+    if (new == NULL)
+        return;
+    new->name = malloc(strlen(name) + 1);
+    strcpy(new->name, name);
+    new->required_labs = labs;
+    new->allowed_students = students;
+    new->selectedCount = 0;
+}
+
+void new_faculty(Faculty *new, char *first_name, char *last_name) {
+    if (new == NULL)
+        return;
+    // full_name ="<first_name> <last_name><\0>"
+    size_t name_length = strlen(first_name) + strlen(last_name) + 2;
+    char *full_name = (char *) malloc(name_length);
+    empty(full_name, name_length);
+    char *to_append = strcat(full_name, first_name);
+    to_append = strcat(to_append, " ");
+    strcat(to_append, last_name);
+
+
+    new->fullname = malloc(strlen(full_name) + 1);
+    strcpy(new->fullname, full_name);
+    new->trained_for_count = 0;
+    new->trained_for = NULL;
+
+    free(full_name);
+}
+
+void new_student(Student *new, char *first_name, char *last_name, char *ID) {
+    if (new == NULL)
+        return;
+    size_t name_length = strlen(first_name) + strlen(last_name) + 2;
+    char *full_name = (char *) malloc(name_length);
+    empty(full_name, name_length);
+    char *to_append = strcat(full_name, first_name);
+    to_append = strcat(to_append, " ");
+    strcat(to_append, last_name);
+
+//    printf("Got fullname:|%s|\n", full_name);
+
+    new->name = malloc(strlen(full_name) + 1);
+    strcpy(new->name, full_name);
+    new->ID = malloc(ID_SIZE + 1); // 5 chars + \0
+    strcpy(new->ID, ID);
+    new->required_courses_count = 0;
+    new->required_courses = NULL;
+
+    free(full_name);
+
+}
+
+
