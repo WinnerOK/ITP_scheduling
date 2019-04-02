@@ -13,22 +13,48 @@
 
 /////////////////////////////////Constants, types/////////////////////////////////
 
+typedef unsigned long long ull;
+
+///Input Constants///
 #define MAXN 50
 #define MAXN_LENGTH 2
 //"DaniilManakovskiyOutput<MAXN_LENGTH chars for number>.txt\0 -
 #define FILENAME_SIZE (28 + MAXN_LENGTH)
 #define MAX_ENTRY_SIZE 32
 #define MAX_ENTRY_COUNT 32
-//#define MAX_BUFFER_SIZE (MAX_ENTRY_SIZE * MAX_ENTRY_COUNT)
+size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 #define ID_SIZE 5
-#define MAX_LOAD_FACTOR 0.75
-#define True 1
-#define False 0
 
-typedef unsigned long long ull;
+///Hash Table Constants///
+#define MAX_LOAD_FACTOR 0.75
 const ull z = 7;
 
-size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
+///Evolution Constants///
+#define POPULATION_SIZE 1000
+#define EVOLUTION_STEPS 1000
+#define BEST_FIT_PERCENTAGE 0.1
+#define GOOD_FIT_PERCENTAGE 0.2
+#define MUTATION_PROBABILITY 0.1
+#define TAKE_SECOND_PARENT_GENE (1 - (MUTATION_PROBABILITY))
+#define TAKE_FIRST_PARENT_GENE ((TAKE_SECOND_PARENT_GENE)/2)
+
+///Error Penalties///
+#define COURSE_NOT_RUN 20
+
+#define PROFESSOR_UNASSIGNED 10
+#define PROFESSOR_WRONG SUBJECT 5
+#define PROFESSOR_LACKING_CLASS 5
+
+#define TA_LACKING_CLASS 2
+
+#define STUDENT_LACKING_CLASS 1
+
+///Constraints///
+#define TA_MAX_CLASS 4
+
+///Utility Constants///
+#define True 1
+#define False 0
 
 
 /////////////////////////////////Data structures/////////////////////////////////
@@ -39,6 +65,8 @@ typedef struct node {
 } Node;
 
 void printList(Node *node, void (*print_function)(void *));
+
+void freeList(Node *node, void (*destructor)(void *));
 
 // functions for different representation of void* in list nodes
 void printInt(void *n);
@@ -74,6 +102,10 @@ typedef struct {
     size_t key_size, value_size;
 
     int (*key_comparator)(void *, void *);
+
+    void (*value_destructor)(void *);
+
+    void (*key_destructor)(void *);
     /* 1: key1 > key2
      * 0: key1 = key2 actually, only this need (!!!)
      * -1 key1 < key2
@@ -87,7 +119,8 @@ void free_hash_entry(HashNode *node);
 void init_datalist(HashList *datalist, size_t capacity);
 
 void hash_table_init(HashTable *table, size_t capacity, size_t key_size,
-                     size_t value_size, int (*key_cmp)(void *, void *));
+                     size_t value_size, int (*key_cmp)(void *, void *)/*,
+                     void (*key_destructor)(void *), void (*value_destructor)(void *)*/);
 
 void insert(HashTable *table, void *key, void *value);
 
@@ -136,18 +169,21 @@ typedef struct student {
 ///Genetic data structures///
 typedef struct prof {
     Faculty *professor;
-    char isDoingWrongSubject; // bool
-    Node *courses; // what courses prof teaches
+    char /*Bool*/ isDoingWrongSubject;
+    int courses_teaching_count;
+    Node *courses_teaching; // what courses prof teaches
 } ProfessorGenetic;
 
 typedef struct ta {
     Faculty *TA;
-    Node *courses; // what courses prof teaches
+    int courses_teaching_count;
+    Node *courses_teaching; // what courses prof teaches
 } TAGenetic;
 
 typedef struct course {
     Subject *subject;
     ProfessorGenetic *prof;
+    int TA_assigned;
     Node *TAs;
 } CourseGenetic;
 
@@ -159,13 +195,20 @@ typedef struct individ {
 
 /////////////////////////////////Utility functions and constructors/////////////////////////////////
 ///Constructors//
-//Creation procedures:
 //All of them fills the fields of stuct, given pre-allocated pointer to the struct
 void new_subject(Subject *new, char *name, int labs, int students);
 
 void new_faculty(Faculty *new, char *first_name, char *last_name);
 
 void new_student(Student *new, char *first_name, char *last_name, char *ID);
+
+
+///Destructors//
+void del_subject(Subject *subj);
+
+void del_faculty(Faculty *f);
+
+void del_student(Student *s);
 
 ///ProfessorGenetic///
 char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course);
@@ -195,7 +238,7 @@ char /*Bool*/ willRun(CourseGenetic *course);
 int errorIndividual(Individual *individual);
 
 /////////////////////////////////Functions used for solving/////////////////////////////////
-void printEmail(); //TODO don't forget to call it
+void printEmail();
 
 void solve();
 
@@ -223,6 +266,14 @@ int parseInput();
 /////////////////////////////////Global variables/////////////////////////////////
 char *global_buffer;
 HashTable *subjectByName = NULL;
+int subjects_count = 0;
+int profs_count = 0;
+int TAs_count = 0;
+int students_count = 0;
+
+ProfessorGenetic *standardProfessorPool;
+TAGenetic *standardTAPool;
+CourseGenetic *standardCoursePool;
 
 
 ///UTIL FUNCTIONS///
@@ -244,26 +295,9 @@ int cmpStr(void *s1, void *s2) {
 
 int main() {
     global_buffer = (char *) malloc(MAX_BUFFER_SIZE);
+//    printEmail() //TODO don't forget to call it
 //    test();
     solve();
-//    Node *start = NULL;
-//
-//    // Create and print an int linked list
-//    unsigned int_size = sizeof(int);
-//    int arr[] = {10, 20, 30, 40, 50}, i;
-//    for (i = 4; i >= 0; i--)
-//        pushFront(&start, &arr[i], int_size);
-//    printf("Created integer linked list is \n");
-//    printList(start, printInt);
-//
-//    // Create and print a float linked list
-//    unsigned float_size = sizeof(double);
-//    start = NULL;
-//    double arr2[] = {10.1, 20.2, 30.3, 40.4, 50.5};
-//    for (i = 4; i >= 0; i--)
-//        pushFront(&start, &arr2[i], float_size);
-//    printf("\n\nCreated double linked list is \n");
-//    printList(start, printDouble);
 
     return 0;
 }
@@ -275,44 +309,86 @@ void printEmail() {
 }
 
 void solve() {
-    for (int i = 1; i <= MAXN; ++i) {
+    for (int test = 1; test <= MAXN; ++test) {
         char num[FILENAME_SIZE];
         //writes to the buffer filename of the current input file
-        snprintf(num, FILENAME_SIZE, "input%d.txt", i);
+        snprintf(num, FILENAME_SIZE, "input%d.txt", test);
         // if input file exist, solve the problem
         if (freopen(num, "r", stdin) != NULL) {
-            snprintf(num, FILENAME_SIZE, "output%d.txt", i);
+            snprintf(num, FILENAME_SIZE, "output%d.txt", test);
 //            freopen(num, "w", stdout);
 
             //solve task for a particular input
-            Node *courses = NULL;
+            Node *subjects = NULL;
             Node *profs = NULL;
             Node *TAs = NULL;
             Node *students = NULL;
 
-            int courses_count = 0;
-            int profs_count = 0;
-            int TAs_count = 0;
-            int students_count = 0;
 
             subjectByName = (HashTable *) malloc(sizeof(HashTable));
             hash_table_init(subjectByName, 5, MAX_ENTRY_SIZE, sizeof(Node *), cmpStr);
 
-            if (parseInput(&courses, &profs, &TAs, &students) != 0) {
+            if (parseInput(&subjects, &profs, &TAs, &students) != 0) {
                 printf("Invalid input.");
                 continue;
             }
 
 
             printf("\n------------\n");
-            printList(courses, printSubject);
+            printList(subjects, printSubject);
             printf("\n------------\n");
             printList(profs, printFaculty);
             printf("\n------------\n");
             printList(TAs, printFaculty);
 //            printf("\n------------\n");
 //            printList(students, printStudent);
-            printf("lol");
+
+            printf("Done with input\n");
+
+            standardProfessorPool = (ProfessorGenetic *) malloc(profs_count * sizeof(ProfessorGenetic));
+            standardTAPool = (TAGenetic *) malloc(TAs_count * sizeof(TAGenetic));
+            standardCoursePool = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
+
+            Node *iterator = profs;
+            for (int i = 0; i < profs_count; ++i) {
+                standardProfessorPool[i].professor = iterator->data;
+                standardProfessorPool[i].courses_teaching_count = 0;
+                standardProfessorPool[i].isDoingWrongSubject = False;
+                standardProfessorPool[i].courses_teaching = NULL;
+                iterator = iterator->next;
+            }
+
+            iterator = TAs;
+            for (int i = 0; i < TAs_count; ++i) {
+                standardTAPool[i].TA = iterator->data;
+                standardTAPool[i].courses_teaching_count = 0;
+                standardTAPool[i].courses_teaching = NULL;
+                iterator = iterator->next;
+            }
+
+            iterator = subjects;
+            for (int i = 0; i < subjects_count; ++i) {
+                standardCoursePool[i].subject = iterator->data;
+                standardCoursePool[i].prof = NULL;
+                standardCoursePool[i].TAs = NULL;
+                standardCoursePool[i].TA_assigned = 0;
+                iterator = iterator->next;
+            }
+
+            Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
+            // generate random population
+            for (int i = 0; i < POPULATION_SIZE; ++i) {
+
+            }
+
+
+            freeList(subjects, (void (*)(void *)) del_subject);
+            freeList(profs, (void (*)(void *)) del_faculty);
+            freeList(TAs, (void (*)(void *)) del_faculty);
+            freeList(students, (void (*)(void *)) del_student);
+            free(standardProfessorPool);
+            free(standardTAPool);
+            free(standardCoursePool);
         }
     }
 
@@ -332,7 +408,7 @@ int parseInput(Node **subjects, Node **profs, Node **TAs, Node **students) {
         new_subject(n, course_name, labs_required, students_allowed);
         pushFront(subjects, n, sizeof(Subject));
         insert(subjectByName, course_name, *subjects);
-
+        subjects_count++;
         free(course_name);
         free(n);
     }
@@ -420,14 +496,18 @@ int parseInput(Node **subjects, Node **profs, Node **TAs, Node **students) {
         switch (status) {
             case PROFESSOR: {
                 pushFront(profs, n, sizeof(Faculty));
+                ++profs_count;
                 break;
             }
             case TA: {
                 pushFront(TAs, n, sizeof(Faculty));
+                ++TAs_count;
                 break;
             }
             case STUDENT: {
                 pushFront(students, n, sizeof(Student));
+                ++students_count;
+                break;
             }
         }
 
@@ -482,7 +562,6 @@ void printStudent(void *s) {
     printf("\n\n");
 }
 
-//TODO: for some reason valgrind says, that pushFront leaks
 void pushFront(Node **head, void *data, size_t size) {
     Node *new_node = (Node *) malloc(sizeof(Node));
     if (new_node == NULL) {
@@ -511,6 +590,20 @@ void printList(Node *node, void (*print_function)(void *)) {
     }
 }
 
+void freeList(Node *node, void (*destructor)(void *)) {
+    Node *next;
+    while (node != NULL) {
+        next = node->next;
+        if (destructor != NULL)
+            destructor(node->data);
+        free(node->data);
+        node->prev = NULL;
+        node->next = NULL;
+        free(node);
+        node = next;
+    }
+}
+
 ///Hash Map///
 
 ull hash(const void *data, size_t size) {
@@ -536,13 +629,16 @@ void free_hash_entry(HashNode *node) {
 
 
 void
-hash_table_init(HashTable *table, size_t capacity, size_t key_size, size_t value_size, int (*key_cmp)(void *, void *)) {
+hash_table_init(HashTable *table, size_t capacity, size_t key_size, size_t value_size, int (*key_cmp)(void *, void *)/*,
+                void (*key_destructor)(void *), void (*value_destructor)(void *)*/) {
     table->key_size = key_size;
     table->value_size = value_size;
     table->capacity = capacity;
     table->datalist = (HashList *) malloc(capacity * sizeof(HashList));
     table->key_comparator = key_cmp;
     table->size = 0;
+//    table->key_destructor = key_destructor;
+//    table->value_destructor = value_destructor;
     init_datalist(table->datalist, capacity);
 }
 
@@ -631,7 +727,7 @@ void rehash(HashTable *table) {
     }
     table->capacity *= 2;
     table->datalist = temp->datalist;
-    printf("New size: %d\n", table->capacity);
+    printf("New size: %zu\n", table->capacity);
     free(temp);
 }
 
@@ -691,6 +787,8 @@ void remove_el(HashTable *table, void *key) {
     }
 }
 
+
+///Constructors//
 void new_subject(Subject *new, char *name, int labs, int students) {
     if (new == NULL)
         return;
@@ -742,6 +840,22 @@ void new_student(Student *new, char *first_name, char *last_name, char *ID) {
 
     free(full_name);
 
+}
+
+///Destructors//
+void del_subject(Subject *subj) {
+    free(subj->name);
+}
+
+void del_faculty(Faculty *f) {
+    free(f->fullname);
+    freeList(f->trained_for, NULL);
+}
+
+void del_student(Student *s) {
+    free(s->name);
+    free(s->ID);
+    freeList(s->required_courses, NULL);
 }
 
 
