@@ -69,7 +69,7 @@ typedef struct node {
 } Node;
 
 typedef struct list {
-    size_t dataSize;
+    size_t dataSize; // TODO: It is still unused, do you really need it?
     int cursor_position;
     int size;
     Node *head;
@@ -77,13 +77,15 @@ typedef struct list {
     Node *cursor;
 } List;
 
-Node *getFromList(List *list, int ind);
+Node *getNodeFromList(List *list, int ind);
+
+void *getFromList(List *list, int ind);
 
 void printList(List *list, void (*print_function)(void *));
 
 void freeList(List *list, void (*destructor)(void *));
 
-void listCopy(List *dest, List *src); // list dest must be initialized, but empty!!!
+void listCopy(List *dest, List *src, size_t datasize); // list dest must be initialized, but empty!!!
 
 // functions for different representation of void* in list nodes
 void printInt(void *n);
@@ -107,6 +109,10 @@ void printTAGenetic(void *taG);
 void pushBack(List *list, void *data);
 
 void initList(List *list, size_t dataSize);
+
+char /*Bool*/ isInList(List *list, void *data, int (*key_cmp)(void *, void *));
+
+void removeFromList(List *list, int index/*TODO maybe add destructor?*/);
 
 ///Hash Map///
 typedef struct hash_node {
@@ -195,6 +201,7 @@ typedef struct student {
 typedef struct prof {
     Faculty *professor;
     char /*Bool*/ isDoingWrongSubject;
+    char /*Bool*/ isBusy;
     int courses_teaching_count;
     List *courses_teaching; // what courses prof teaches
 } ProfessorGenetic;
@@ -235,16 +242,12 @@ void del_faculty(Faculty *f);
 
 void del_student(Student *s);
 
-//void del_ProfessorGenetic(ProfessorGenetic* prof);
+void del_faculty_genetic(ProfessorGenetic *prof);
 
 ///ProfessorGenetic///
 char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course);
 
-char /*Bool*/ isBusy(ProfessorGenetic *prof);
-
 void AssignToProf(ProfessorGenetic *prof, CourseGenetic *course);
-
-char /*Bool*/ CanTeachSubject(ProfessorGenetic *prof, Subject *subj);
 
 int errorProf(ProfessorGenetic *prof);
 
@@ -337,38 +340,32 @@ void shuffle(CourseGenetic arr[], int n) {
     }
 }
 
+void introduce() {
+    printf("Sizeof(Node) = %ld\n", sizeof(Node));
+    printf("Sizeof(List) = %ld\n", sizeof(List));
+    printf("Sizeof(HashNode) = %ld\n", sizeof(HashNode));
+    printf("Sizeof(HashList) = %ld\n", sizeof(HashList));
+    printf("Sizeof(HashTable) = %ld\n", sizeof(HashTable));
+    printf("Sizeof(Subject) = %ld\n", sizeof(Subject));
+    printf("Sizeof(Faculty) = %ld\n", sizeof(Faculty));
+    printf("Sizeof(Student) = %ld\n", sizeof(Student));
+    printf("Sizeof(ProfessorGenetic) = %ld\n", sizeof(ProfessorGenetic));
+    printf("Sizeof(TAGenetic) = %ld\n", sizeof(TAGenetic));
+    printf("Sizeof(CourseGenetic) = %ld\n", sizeof(CourseGenetic));
+    printf("Sizeof(Individual) = %ld\n", sizeof(Individual));
+//    printf("Sizeof() = %lld", sizeof());
+}
+
 int main() {
+
+//    introduce();
+
     srand((unsigned int) time(NULL));
     global_buffer = (char *) malloc(MAX_BUFFER_SIZE);
 //    printEmail() //TODO don't forget to call it
-//    test();
     solve();
 
-//    Node *list1 = NULL;
-//    Node *list2 = NULL;
-//    int *i = malloc(sizeof(int));
-//    *i = 6;
-//    pushFront(&list1, i, sizeof(int));
-//    *i = 7;
-//    pushFront(&list1, i, sizeof(int));
-//
-//    listCopy(&list2, list1);
-//    printList(list1, printInt);
-//    printf("\n");
-//    printList(list2, printInt);
-//
-//    printf("\n\n");
-//    (*(int *) (list1->next->data)) = 2;
-//    (*(int *) (list1->data)) = 1;
-//
-//
-//    printList(list1, printInt);
-//    printf("\n");
-//    printList(list2, printInt);
-//
-//    freeList(list1, NULL);
-//    freeList(list2, NULL);
-//    free(i);
+    free(global_buffer);
     return 0;
 }
 
@@ -410,56 +407,114 @@ void solve() {
             }
 
 
-            printf("\n------------\n");
-            printList(subjects, printSubject);
-            printf("\n------------\n");
-            printList(profs, printFaculty);
-            printf("\n------------\n");
-            printList(tas, printFaculty);
-            printf("\n------------\n");
-            printList(students, printStudent);
+//            printf("\n------------\n");
+//            printList(subjects, printSubject);
+//            printf("\n------------\n");
+//            printList(profs, printFaculty);
+//            printf("\n------------\n");
+//            printList(tas, printFaculty);
+//            printf("\n------------\n");
+//            printList(students, printStudent);
 
             printf("\n------Done with input------\n");
 //            input_finished = 1;
 
-//            standardCoursePool = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
-//
-//            Node *iterator = profs;
-//            for (int i = 0; i < profs_count; ++i) {
-//                ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
-//                new->professor = iterator->data;
-//                new->courses_teaching_count = 0;
-//                new->isDoingWrongSubject = False;
-//                new->courses_teaching = NULL;
-//                pushFront(&standardProfessorPool, new, sizeof(ProfessorGenetic));
-//                free(new);
-//                iterator = iterator->next;
-//            }
-//
-////            printList(standardProfessorPool, printProfessorGenetic);
-//
-//            iterator = tas;
-//            for (int i = 0; i < tas_count; ++i) {
-//                TAGenetic *new = malloc(sizeof(TAGenetic));
-//                new->TA = iterator->data;
-//                new->courses_teaching_count = 0;
-//                new->courses_teaching = NULL;
-//                pushFront(&standardTAPool, new, sizeof(TAGenetic));
-//                free(new);
-//                iterator = iterator->next;
-//            }
-//
-//            iterator = subjects;
-//            for (int i = 0; i < subjects_count; ++i) {
-//                standardCoursePool[i].subject = iterator->data;
-//                standardCoursePool[i].prof = NULL;
-//                standardCoursePool[i].TAs = NULL;
-//                standardCoursePool[i].TA_assigned = 0;
-//                iterator = iterator->next;
-//            }
-//
-//            Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
-//            // generate random population
+            standardProfessorPool = malloc(sizeof(List));
+            initList(standardProfessorPool, sizeof(ProfessorGenetic *));
+
+            standardTAPool = malloc(sizeof(List));
+            initList(standardTAPool, sizeof(TAGenetic *));
+
+            standardCoursePool = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
+
+            for (int i = 0; i < profs_count; ++i) {
+                ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
+                new->professor = (Faculty *) getFromList(profs, i);
+                new->courses_teaching_count = 0;
+                new->courses_teaching = malloc(sizeof(List));
+                initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                new->isDoingWrongSubject = False;
+                new->isBusy = False;
+                pushBack(standardProfessorPool, new);
+            }
+
+//            printList(standardProfessorPool, printProfessorGenetic);
+
+
+            for (int i = 0; i < tas_count; ++i) {
+                TAGenetic *new = malloc(sizeof(TAGenetic));
+                new->TA = (Faculty *) getFromList(tas, i);
+                new->courses_teaching_count = 0;
+                new->courses_teaching = malloc(sizeof(List));
+                initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                pushBack(standardTAPool, new);
+            }
+
+            for (int i = 0; i < subjects_count; ++i) {
+                standardCoursePool[i].subject = (Subject *) getFromList(subjects, i);
+                standardCoursePool[i].prof = NULL;
+                standardCoursePool[i].TAs = malloc(sizeof(List));
+                initList(standardCoursePool[i].TAs, sizeof(TAGenetic *)); //TODO really this datatype?
+                standardCoursePool[i].TA_assigned = 0;
+            }
+
+
+            Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
+
+            /*TODO: Когда будешь чистить индивида, учти, что нужно удалить профессоров и ТА из пула и из курсов,
+             * ибо они были тупо скопированы.
+             * Сами курсы тоже нужно почистить изнутри
+             *
+             */
+            // generate random population
+            for (int i = 0; i < POPULATION_SIZE; ++i) {
+                List *profPool = malloc(sizeof(List));
+                initList(profPool, sizeof(ProfessorGenetic *));
+
+                List *taPool = malloc(sizeof(List));
+                initList(taPool, sizeof(TAGenetic *));
+
+                listCopy(profPool, standardProfessorPool, sizeof(ProfessorGenetic));
+                listCopy(taPool, standardTAPool, sizeof(TAGenetic));
+
+                CourseGenetic *courses = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
+                memcpy(courses, standardCoursePool, subjects_count * sizeof(CourseGenetic));
+
+                int profPoolSize = profs_count;
+                int taPoolSize = tas_count;
+
+
+                shuffle(courses, subjects_count);
+                printf("#%3d:\n", i);
+                for (int j = 0; j < subjects_count; ++j) {
+//                    printf("%s ", courses[j].subject->name);
+                    if (profPoolSize == 0) {
+                        break;
+                    }
+
+                    int randomInd = rand() % profPoolSize;
+                    ProfessorGenetic *prof = getFromList(profPool, randomInd);
+
+                    if (isAvailable(prof, &courses[j]) == False) {
+                        continue;
+                    }
+
+                    AssignTo(prof, &courses[j]);
+
+                    if (prof->isBusy == True) {
+                        removeFromList(profPool, randomInd);
+                        profPoolSize--;
+                    }
+
+                    // All professors assigned
+
+                    population[i].schedule = courses;
+
+//                    printf("\t%s - %s\n", population[i].schedule[j].subject->name, population[i].schedule[j].prof->professor->fullname);
+                }
+                printf("\n\n");
+            }
+
 //            for (int i = 0; i < POPULATION_SIZE; ++i) {
 //                Node *profPool = NULL;
 //                listCopy(&profPool, standardProfessorPool);
@@ -512,14 +567,23 @@ void solve() {
             freeList(profs, (void (*)(void *)) del_faculty);
             freeList(tas, (void (*)(void *)) del_faculty);
             freeList(students, (void (*)(void *)) del_student);
-//            freeList(standardProfessorPool, NULL);
-//            freeList(standardTAPool, NULL);
-//            free(standardCoursePool);
+            freeList(standardProfessorPool, (void (*)(void *)) del_faculty_genetic);
+            freeList(standardTAPool, (void (*)(void *)) del_faculty_genetic);
+
+            for (int i = 0; i < subjects_count; ++i) {
+                free(standardCoursePool[i].TAs);
+            }
+            free(standardCoursePool);
 
             free(subjects);
             free(profs);
             free(tas);
             free(students);
+            free(standardProfessorPool);
+            free(standardTAPool);
+
+            //TODO: free the population (Hope for the best)
+
         }
     }
 
@@ -527,7 +591,7 @@ void solve() {
 
 int parseInput(List *subjects, List *profs, List *TAs, List *students) {
     //reading subjects, until "P" is met
-    //TODO: continue migration
+    //TODO: continue migration (done?)
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1 && strcmp(global_buffer, "P\n") != 0) {
 
         trim();
@@ -656,8 +720,45 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
 /////////////////////////////////Data structures/////////////////////////////////
 ///Linked List///
+void removeFromList(List *list, int index) {
+    Node *tmp = getNodeFromList(list, index);
+    if (tmp != NULL) {
+        list->size--;
 
-Node *getFromList(List *list, int ind) {
+        if (list->size == 0) {
+            list->head = NULL;
+            list->tail = NULL;
+            list->cursor = NULL;
+            list->cursor_position = 0;
+            free(tmp);
+            return;
+        }
+
+        if (tmp == list->head) {
+            list->head = tmp->next;
+            list->head->prev = NULL;
+            list->cursor = list->head;
+            list->cursor_position = 0;
+            free(tmp);
+            return;
+        }
+
+        if (tmp == list->tail) {
+            list->tail = tmp->prev;
+            list->tail->next = NULL;
+            list->cursor = list->tail;
+            list->cursor_position = list->size - 1;
+            free(tmp);
+            return;
+        }
+
+        tmp->prev->next = tmp->next;
+        tmp->next->prev = tmp->prev;
+        free(tmp);
+    }
+}
+
+Node *getNodeFromList(List *list, int ind) {
     while (ind < 0) {
         ind += list->size;
     }
@@ -686,6 +787,15 @@ Node *getFromList(List *list, int ind) {
     }
     list->cursor_position = ind;
     return list->cursor;
+}
+
+void *getFromList(List *list, int ind) {
+    Node *res = getNodeFromList(list, ind);
+    if (res != NULL) {
+        return res->data;
+    } else {
+        return NULL;
+    }
 }
 
 void printInt(void *n) {
@@ -731,8 +841,8 @@ void printProfessorGenetic(void *pg) {
 
 void printCourseGenetic(void *cg) {
     CourseGenetic *course = (CourseGenetic *) cg;
-    printf("\tSubject: %s\n\tProf: %s\n\t#TA: %d\n\t", course->subject->name, course->prof/*->professor->fullname*/,
-           course->TA_assigned);
+    printf("\tSubject: %s\n\tProf: %s\n\t#TA: %d\n\t", course->subject->name, course->prof->professor->fullname/*,
+           course->TA_assigned*/);
 }
 
 void printTAGenetic(void *taG) {
@@ -780,15 +890,19 @@ void initList(List *list, size_t dataSize) {
 }
 
 
-void listCopy(List *dest, List *src) {
+void listCopy(List *dest, List *src, size_t datasize) {
     dest->dataSize = src->dataSize;
     if (dest->head != NULL) {
         perror("Destination list must be empty!\n");
         return;
     }
 
+    void *tmp;
+
     for (int i = 0; i < src->size; ++i) {
-        pushBack(dest, getFromList(src, i));
+        tmp = malloc(datasize);
+        memcpy(tmp, getFromList(src, i), datasize);
+        pushBack(dest, tmp);
     }
 }
 
@@ -814,6 +928,15 @@ void freeList(List *list, void (*destructor)(void *)) {
         free(node);
         node = next;
     }
+}
+
+char /*Bool*/ isInList(List *list, void *data, int (*key_cmp)(void *, void *)) {
+    for (int i = 0; i < list->size; ++i) {
+        if (key_cmp(data, getFromList(list, i)) == 0) {
+            return True;
+        }
+    }
+    return False;
 }
 
 ///Hash Map///
@@ -1075,6 +1198,10 @@ void del_student(Student *s) {
     freeList(s->required_courses, NULL);
 }
 
+void del_faculty_genetic(ProfessorGenetic *prof) {
+    free(prof->courses_teaching);
+}
+
 ///Functions on DT///
 ///ProfessorGenetic///
 char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course) {
@@ -1083,6 +1210,24 @@ char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course) {
     }
 
     if (prof->courses_teaching_count == 1) {
-        return !prof->isDoingWrongSubject;// && // TODO: prof can do subject
+        return !prof->isDoingWrongSubject &&
+               isInList(prof->professor->trained_for, course->subject->name, cmpStr) == True;
+    }
+
+    return False;
+}
+
+void AssignToProf(ProfessorGenetic *prof, CourseGenetic *course) {
+    prof->courses_teaching_count++;
+    pushBack(prof->courses_teaching, course);
+
+    if (isInList(prof->professor->trained_for, course->subject->name, cmpStr) == False) {
+        prof->isDoingWrongSubject = True;
+    }
+
+    course->prof = prof;
+
+    if (prof->isDoingWrongSubject == True || prof->courses_teaching_count == 2) {
+        prof->isBusy = True;
     }
 }
