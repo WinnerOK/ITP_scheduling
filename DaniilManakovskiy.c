@@ -7,7 +7,6 @@
  * - Student has at least 1 required course
  */
 
-// TODO migrate from Node* to List*
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,7 +32,7 @@ size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 const ull z = 7;
 
 ///Evolution Constants///
-#define POPULATION_SIZE 1000
+#define POPULATION_SIZE 1
 #define EVOLUTION_STEPS 1000
 #define BEST_FIT_PERCENTAGE 0.1
 #define GOOD_FIT_PERCENTAGE 0.2
@@ -60,6 +59,8 @@ const ull z = 7;
 #define False 0
 
 
+int flag = 0;
+
 /////////////////////////////////Data structures/////////////////////////////////
 ///Linked List///
 typedef struct node {
@@ -84,6 +85,8 @@ void *getFromList(List *list, int ind);
 void printList(List *list, void (*print_function)(void *));
 
 void freeList(List *list, void (*destructor)(void *));
+
+void freeListSaveData(List *list);
 
 void listCopy(List *dest, List *src, size_t datasize); // list dest must be initialized, but empty!!!
 
@@ -221,8 +224,9 @@ typedef struct course {
 
 typedef struct individ {
     CourseGenetic *schedule; //list of courses
+    List *allprofs;
     List *professors;
-    List *TAs;
+    List *allTAs;
 } Individual;
 
 /////////////////////////////////functions on DTs and constructors/////////////////////////////////
@@ -301,8 +305,6 @@ int profs_count = 0;
 int tas_count = 0;
 int students_count = 0;
 
-
-int ta = 1;
 
 List *standardProfessorPool = NULL;
 List *standardTAPool = NULL;
@@ -419,36 +421,16 @@ void solve() {
             printf("\n------Done with input------\n");
 //            input_finished = 1;
 
-            standardProfessorPool = malloc(sizeof(List));
-            initList(standardProfessorPool, sizeof(ProfessorGenetic *));
+//            standardProfessorPool = malloc(sizeof(List));// полностью копируется в каждого индивида
+//            initList(standardProfessorPool, sizeof(ProfessorGenetic *));
+//
+//            standardTAPool = malloc(sizeof(List));// полностью копируется в каждого индивида
+//            initList(standardTAPool, sizeof(TAGenetic *));
 
-            standardTAPool = malloc(sizeof(List));
-            initList(standardTAPool, sizeof(TAGenetic *));
-
-            standardCoursePool = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
-
-            for (int i = 0; i < profs_count; ++i) {
-                ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
-                new->professor = (Faculty *) getFromList(profs, i);
-                new->courses_teaching_count = 0;
-                new->courses_teaching = malloc(sizeof(List));
-                initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
-                new->isDoingWrongSubject = False;
-                new->isBusy = False;
-                pushBack(standardProfessorPool, new);
-            }
-
-//            printList(standardProfessorPool, printProfessorGenetic);
+            standardCoursePool = (CourseGenetic *) malloc(
+                    subjects_count * sizeof(CourseGenetic)); // полностью копируется в каждого индивида
 
 
-            for (int i = 0; i < tas_count; ++i) {
-                TAGenetic *new = malloc(sizeof(TAGenetic));
-                new->TA = (Faculty *) getFromList(tas, i);
-                new->courses_teaching_count = 0;
-                new->courses_teaching = malloc(sizeof(List));
-                initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
-                pushBack(standardTAPool, new);
-            }
 
             for (int i = 0; i < subjects_count; ++i) {
                 standardCoursePool[i].subject = (Subject *) getFromList(subjects, i);
@@ -461,38 +443,56 @@ void solve() {
 
             Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
 
-            /*TODO: Когда будешь чистить индивида, учти, что нужно удалить профессоров и ТА из пула и из курсов,
-             * ибо они были тупо скопированы.
-             * Сами курсы тоже нужно почистить изнутри
-             *
-             */
             // generate random population
             for (int i = 0; i < POPULATION_SIZE; ++i) {
+
+                population[i].allprofs = malloc(sizeof(List));
+                initList(population[i].allprofs, sizeof(ProfessorGenetic *));
+
                 List *profPool = malloc(sizeof(List));
                 initList(profPool, sizeof(ProfessorGenetic *));
 
                 List *taPool = malloc(sizeof(List));
                 initList(taPool, sizeof(TAGenetic *));
 
-                listCopy(profPool, standardProfessorPool, sizeof(ProfessorGenetic));
-                listCopy(taPool, standardTAPool, sizeof(TAGenetic));
+
+                for (int j = 0; j < profs_count; ++j) {
+                    ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
+                    new->professor = (Faculty *) getFromList(profs, j);
+                    new->courses_teaching_count = 0;
+                    new->courses_teaching = malloc(sizeof(List));
+                    initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                    new->isDoingWrongSubject = False;
+                    new->isBusy = False;
+                    pushBack(profPool, new);
+                    pushBack(population[i].allprofs, new);
+                }
+
+//            printList(standardProfessorPool, printProfessorGenetic);
+
+
+                for (int j = 0; j < tas_count; ++j) {
+                    TAGenetic *new = malloc(sizeof(TAGenetic));
+                    new->TA = (Faculty *) getFromList(tas, j);
+                    new->courses_teaching_count = 0;
+                    new->courses_teaching = malloc(sizeof(List));
+                    initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                    pushBack(taPool, new);
+                }
 
                 CourseGenetic *courses = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
                 memcpy(courses, standardCoursePool, subjects_count * sizeof(CourseGenetic));
 
-                int profPoolSize = profs_count;
-                int taPoolSize = tas_count;
-
-
+                flag = 1;
                 shuffle(courses, subjects_count);
                 printf("#%3d:\n", i);
                 for (int j = 0; j < subjects_count; ++j) {
-//                    printf("%s ", courses[j].subject->name);
-                    if (profPoolSize == 0) {
+                    if (profPool->size == 0) {
                         break;
                     }
 
-                    int randomInd = rand() % profPoolSize;
+                    int randomInd = rand() % profPool->size;
+
                     ProfessorGenetic *prof = getFromList(profPool, randomInd);
 
                     if (isAvailable(prof, &courses[j]) == False) {
@@ -503,77 +503,102 @@ void solve() {
 
                     if (prof->isBusy == True) {
                         removeFromList(profPool, randomInd);
-                        profPoolSize--;
+                    }
+                }
+
+                // All professors assigned
+
+
+                for (int j = 0; j < subjects_count; ++j) {
+                    List *availableTA = malloc(
+                            sizeof(List));
+                    initList(availableTA, sizeof(TAGenetic *));
+                    for (int k = 0; k < taPool->size; ++k) {
+                        TAGenetic *ta = getFromList(taPool, k);
+                        if (isAvailable(ta, &courses[j]) == True) {
+                            pushBack(availableTA, ta);
+                        }
                     }
 
-                    // All professors assigned
+                    for (int l = 0; l < courses[j].subject->required_labs; ++l) {
+                        if (availableTA->size == 0) {
+                            break;
+                        }
 
-                    population[i].schedule = courses;
+                        int randomInd = rand() % availableTA->size;
+                        TAGenetic *ta = getFromList(availableTA, randomInd);
 
-//                    printf("\t%s - %s\n", population[i].schedule[j].subject->name, population[i].schedule[j].prof->professor->fullname);
+                        AssignTo(ta, &courses[j]);
+
+                        if (ta->courses_teaching_count == TA_MAX_CLASS) {
+                            removeFromList(availableTA, randomInd);
+                        }
+
+                    }
+                    freeListSaveData(availableTA);
+                    free(availableTA);
                 }
+
+                for (int j = 0; j < subjects_count; ++j) {
+                    printf("\t%s - %s, ", courses[j].subject->name,
+                           (courses[j].prof != NULL) ? courses[j].prof->professor->fullname : "NULL");
+                    printf("%d TAs: ", courses->TA_assigned);
+                    for (int l = 0; l < courses[j].TA_assigned; ++l) {
+                        printf("%s ", ((TAGenetic *) getFromList(courses[j].TAs, l))->TA->fullname);
+                    }
+                    printf("\n");
+                }
+
+
+                population[i].schedule = courses;
+                population[i].professors = profPool;
+                population[i].allTAs = taPool;
                 printf("\n\n");
             }
 
-//            for (int i = 0; i < POPULATION_SIZE; ++i) {
-//                Node *profPool = NULL;
-//                listCopy(&profPool, standardProfessorPool);
-//                Node *taPool = NULL;
-//                listCopy(&taPool, standardTAPool);
-//                CourseGenetic *courses = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
-//                memcpy(courses, standardCoursePool, subjects_count * sizeof(CourseGenetic));
-//                // all values are copied to the individual
-//
-//                int profPoolSize = profs_count;
-//                int taPoolSize = tas_count;
-//
-//
-//                shuffle(courses, subjects_count);
-//                printf("#%3d: ", i);
-//                for (int j = 0; j < subjects_count; ++j) {
-//                    if (profPoolSize == 0) {
-//                        break;
-//                    }
-//
-//                    Node *profNode = getFromList(profPool, rand() % profPoolSize);
-//                    ProfessorGenetic *prof = profNode->data;
-//
-//                    if (isAvailable(prof, &courses[j]) == False) { //TODO implement
-//                        continue;
-//                    }
-//
-//                    AssignTo(prof, &courses[j]); //TODO implement
-//
-//                    if (isBusy(prof) == True) {
-//                        //TODO: remove from professor pool
-//                    }
-//
-//
-//                }
-//                printf("\n");
-//                population[i].schedule = courses;
-//
-//
-////                printList(profPool, printProfessorGenetic);
-////                printList(taPool, printTAGenetic);
-//
-//
-//                freeList(profPool, NULL);
-//                freeList(taPool, NULL);
-//            }
-//
-//
-            freeList(subjects, (void (*)(void *)) del_subject);
-            freeList(profs, (void (*)(void *)) del_faculty);
-            freeList(tas, (void (*)(void *)) del_faculty);
-            freeList(students, (void (*)(void *)) del_student);
-            freeList(standardProfessorPool, (void (*)(void *)) del_faculty_genetic);
-            freeList(standardTAPool, (void (*)(void *)) del_faculty_genetic);
+//Population free start
+            for (int i = 0; i < POPULATION_SIZE; ++i) {
+
+                for (int j = 0; j < population[i].allprofs->size; ++j) {
+                    freeListSaveData(((ProfessorGenetic *) (getFromList(population[i].allprofs, j)))->courses_teaching);
+                    free(((ProfessorGenetic *) (getFromList(population[i].allprofs, j)))->courses_teaching);
+                }
+
+                freeList(population[i].allprofs, NULL);
+                free(population[i].allprofs);
+                freeListSaveData(population[i].professors);
+                free(population[i].professors);
+
+                //Cleaned professors that are not assigned to any course TODO: check
+
+                for (int j = 0; j < population[i].allTAs->size; ++j) {
+                    freeListSaveData(((TAGenetic *) (getFromList(population[i].allTAs, j)))->courses_teaching);
+                    free(((TAGenetic *) (getFromList(population[i].allTAs, j)))->courses_teaching);
+                }
+
+                freeList(population[i].allTAs, NULL);
+                free(population[i].allTAs);
+
+                for (int k = 0; k < subjects_count; ++k) {
+                    freeListSaveData(population[i].schedule[k].TAs);
+                }
+
+                free(population[i].schedule);
+
+            }
+            free(population);
+//population free end
+//TODO: поставь это на нужное место
 
             for (int i = 0; i < subjects_count; ++i) {
                 free(standardCoursePool[i].TAs);
             }
             free(standardCoursePool);
+
+            freeList(subjects, (void (*)(void *)) del_subject);
+            freeList(profs, (void (*)(void *)) del_faculty);
+            freeList(tas, (void (*)(void *)) del_faculty);
+            freeList(students, (void (*)(void *)) del_student);
 
             free(subjects);
             free(profs);
@@ -581,9 +606,6 @@ void solve() {
             free(students);
             free(standardProfessorPool);
             free(standardTAPool);
-
-            //TODO: free the population (Hope for the best)
-
         }
     }
 
@@ -591,7 +613,6 @@ void solve() {
 
 int parseInput(List *subjects, List *profs, List *TAs, List *students) {
     //reading subjects, until "P" is met
-    //TODO: continue migration (done?)
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1 && strcmp(global_buffer, "P\n") != 0) {
 
         trim();
@@ -754,6 +775,8 @@ void removeFromList(List *list, int index) {
 
         tmp->prev->next = tmp->next;
         tmp->next->prev = tmp->prev;
+        --list->cursor_position;
+        list->cursor = list->cursor->prev;
         free(tmp);
     }
 }
@@ -765,15 +788,20 @@ Node *getNodeFromList(List *list, int ind) {
     if (ind >= list->size) {
         return NULL;
     }
-
+//    int start_position = list->cursor_position;
     int diff = ind - list->cursor_position; // if positive, go right, else - left
+//    int start_diff = diff;
 
     if (ind < abs(diff)) {
         diff = ind;
         list->cursor = list->head;
-    } else if (list->size - ind < abs(diff)) {
-        diff = -ind;
+//        start_position = 0;
+//        start_diff = ind;
+    } else if (list->size - ind - 1 < abs(diff)) {
+        diff = ind - (list->size - 1);
         list->cursor = list->tail;
+//        start_position = list->size - 1;
+//        start_diff = diff;
     }
 
     while (diff != 0) {
@@ -923,6 +951,18 @@ void freeList(List *list, void (*destructor)(void *)) {
         if (destructor != NULL)
             destructor(node->data);
         free(node->data);
+        node->prev = NULL;
+        node->next = NULL;
+        free(node);
+        node = next;
+    }
+}
+
+void freeListSaveData(List *list) {
+    Node *node = list->head;
+    Node *next;
+    while (node != NULL) {
+        next = node->next;
         node->prev = NULL;
         node->next = NULL;
         free(node);
@@ -1230,4 +1270,18 @@ void AssignToProf(ProfessorGenetic *prof, CourseGenetic *course) {
     if (prof->isDoingWrongSubject == True || prof->courses_teaching_count == 2) {
         prof->isBusy = True;
     }
+}
+
+///TAGenetic///
+char /*Bool*/ isAvailableTA(TAGenetic *ta, CourseGenetic *course) {
+    return (ta->courses_teaching_count < TA_MAX_CLASS && isInList(ta->TA->trained_for, course->subject->name, cmpStr)) ?
+           True : False;
+}
+
+void AssignToTA(TAGenetic *ta, CourseGenetic *course) {
+    pushBack(course->TAs, ta);
+    ++course->TA_assigned;
+
+    pushBack(ta->courses_teaching, course);
+    ++ta->courses_teaching_count;
 }
