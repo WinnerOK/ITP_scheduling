@@ -5,6 +5,9 @@
  * - TA must have exactly 1 trained_for course
  * - Prof has at least 1 trained_for course
  * - Student has at least 1 required course
+ *
+ *
+ * - ПРОВЕРЬ НА ПРОБЕЛЫ В КОНЦЕ СТРОКИ И ПУСТУЮ СТРОКУ В КОНЦЕ - ИХ БЫТЬ НЕ ДОЛЖНО
  */
 
 #include <stdio.h>
@@ -12,6 +15,8 @@
 #include <string.h>
 #include <limits.h>
 #include <time.h>
+
+#define DEBUG 1
 
 /////////////////////////////////Constants, types/////////////////////////////////
 
@@ -32,19 +37,22 @@ size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 const ull z = 7;
 
 ///Evolution Constants///
-#define POPULATION_SIZE 1
-#define EVOLUTION_STEPS 1000
+#define POPULATION_SIZE 1000
+#define EVOLUTION_STEPS 2
 #define BEST_FIT_PERCENTAGE 0.1
 #define GOOD_FIT_PERCENTAGE 0.2
 #define MUTATION_PROBABILITY 0.1
 #define TAKE_SECOND_PARENT_GENE (1 - (MUTATION_PROBABILITY))
 #define TAKE_FIRST_PARENT_GENE ((TAKE_SECOND_PARENT_GENE)/2)
+#define BEST_COUNT (int)(POPULATION_SIZE*BEST_FIT_PERCENTAGE)
+#define CROSSING_PARENTS_COUNT (int)(POPULATION_SIZE * GOOD_FIT_PERCENTAGE)
+#define MAX_STEPS_WITHOUT_IMPROVEMENT 100
 
 ///Error Penalties///
 #define COURSE_NOT_RUN 20
 
 #define PROFESSOR_UNASSIGNED 10
-#define PROFESSOR_WRONG SUBJECT 5
+#define PROFESSOR_WRONG_SUBJECT 5
 #define PROFESSOR_LACKING_CLASS 5
 
 #define TA_LACKING_CLASS 2
@@ -116,6 +124,10 @@ void initList(List *list, size_t dataSize);
 char /*Bool*/ isInList(List *list, void *data, int (*key_cmp)(void *, void *));
 
 void removeFromList(List *list, int index/*TODO maybe add destructor?*/);
+
+int findIndex(List *list, void *key, int (*cmp)(void *, void *));
+
+void removeByKey(List *list, void *key, int (*cmp)(void *, void *));
 
 ///Hash Map///
 typedef struct hash_node {
@@ -227,6 +239,8 @@ typedef struct individ {
     List *allprofs;
     List *professors;
     List *allTAs;
+    List *TAs;
+    int error;
 } Individual;
 
 /////////////////////////////////functions on DTs and constructors/////////////////////////////////
@@ -270,6 +284,8 @@ char /*Bool*/ willRun(CourseGenetic *course);
 
 ///Individual///
 int errorIndividual(Individual *individual);
+
+int cmpIndividuals(Individual *i1, Individual *i2);
 
 /////////////////////////////////Functions used for solving/////////////////////////////////
 void printEmail();
@@ -328,18 +344,49 @@ int cmpStr(void *s1, void *s2) {
     return strcmp((char *) s1, (char *) s2);
 }
 
-void swap(CourseGenetic *a, CourseGenetic *b) {
-    CourseGenetic temp = *a;
-    *a = *b;
-    *b = temp;
+int cmpTA(TAGenetic *t1, TAGenetic *t2) {
+    return strcmp(t1->TA->fullname, t2->TA->fullname);
 }
 
-void shuffle(CourseGenetic arr[], int n) {
+int cmpProf(ProfessorGenetic *p1, ProfessorGenetic *p2) {
+    return strcmp(p1->professor->fullname, p2->professor->fullname);
+}
+
+void swap(void **pa, void **pb) {
+    void *pc;
+
+    pc = *pa;
+    *pa = *pb;
+    *pb = pc;
+}
+
+int k = 0;
+
+CourseGenetic **shuffle(CourseGenetic *arr, int n) {
+    ++k;
+    CourseGenetic c = arr[0];
+    CourseGenetic **result = (CourseGenetic **) malloc(subjects_count * sizeof(CourseGenetic *));
+
+    for (int k = 0; k < n; ++k) {
+        result[k] = &(arr[k]);
+    }
+
     for (int i = n - 1; i > 0; --i) {
         int j = rand() % (i + 1);
-
-        swap(&arr[i], &arr[j]);
+        swap(&(result[i]), &(result[j]));
     }
+#ifdef DEBUG
+    if (strcmp(c.subject->name, arr[0].subject->name) != 0) {
+        fprintf(stderr, "%d) 0st elements are different\n", k);
+    }
+
+#endif
+
+    return result;
+}
+
+double randDouble() {
+    return (double) rand() / (double) RAND_MAX;
 }
 
 void introduce() {
@@ -419,28 +466,6 @@ void solve() {
 //            printList(students, printStudent);
 
             printf("\n------Done with input------\n");
-//            input_finished = 1;
-
-//            standardProfessorPool = malloc(sizeof(List));// полностью копируется в каждого индивида
-//            initList(standardProfessorPool, sizeof(ProfessorGenetic *));
-//
-//            standardTAPool = malloc(sizeof(List));// полностью копируется в каждого индивида
-//            initList(standardTAPool, sizeof(TAGenetic *));
-
-            standardCoursePool = (CourseGenetic *) malloc(
-                    subjects_count * sizeof(CourseGenetic)); // полностью копируется в каждого индивида
-
-
-
-            for (int i = 0; i < subjects_count; ++i) {
-                standardCoursePool[i].subject = (Subject *) getFromList(subjects, i);
-                standardCoursePool[i].prof = NULL;
-                standardCoursePool[i].TAs = malloc(sizeof(List));
-                initList(standardCoursePool[i].TAs, sizeof(TAGenetic *)); //TODO really this datatype?
-                standardCoursePool[i].TA_assigned = 0;
-            }
-
-
             Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
 
             // generate random population
@@ -454,6 +479,9 @@ void solve() {
 
                 List *taPool = malloc(sizeof(List));
                 initList(taPool, sizeof(TAGenetic *));
+
+                List *allTA = malloc(sizeof(List));
+                initList(allTA, sizeof(TAGenetic *));
 
 
                 for (int j = 0; j < profs_count; ++j) {
@@ -477,15 +505,22 @@ void solve() {
                     new->courses_teaching_count = 0;
                     new->courses_teaching = malloc(sizeof(List));
                     initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                    pushBack(allTA, new);
                     pushBack(taPool, new);
                 }
 
                 CourseGenetic *courses = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
-                memcpy(courses, standardCoursePool, subjects_count * sizeof(CourseGenetic));
+                for (int j = 0; j < subjects_count; ++j) {
+                    courses[j].subject = (Subject *) getFromList(subjects, j);
+                    courses[j].prof = NULL;
+                    courses[j].TAs = malloc(sizeof(List));
+                    initList(courses[j].TAs, sizeof(TAGenetic *)); //TODO really this datatype?
+                    courses[j].TA_assigned = 0;
+                }
 
-                flag = 1;
-                shuffle(courses, subjects_count);
-                printf("#%3d:\n", i);
+//                at this point all parents have the save order of courses
+                CourseGenetic **shuffled_courses = shuffle(courses, subjects_count);
+//                printf("#%3d:\n", i);
                 for (int j = 0; j < subjects_count; ++j) {
                     if (profPool->size == 0) {
                         break;
@@ -495,12 +530,12 @@ void solve() {
 
                     ProfessorGenetic *prof = getFromList(profPool, randomInd);
 
-                    if (isAvailable(prof, &courses[j]) == False) {
+                    if (isAvailable(prof, shuffled_courses[j]) == False) {
                         continue;
                     }
 
-                    AssignTo(prof, &courses[j]);
-
+                    AssignTo(prof, shuffled_courses[j]);
+//                    shuffled_courses[j]
                     if (prof->isBusy == True) {
                         removeFromList(profPool, randomInd);
                     }
@@ -515,12 +550,14 @@ void solve() {
                     initList(availableTA, sizeof(TAGenetic *));
                     for (int k = 0; k < taPool->size; ++k) {
                         TAGenetic *ta = getFromList(taPool, k);
-                        if (isAvailable(ta, &courses[j]) == True) {
+
+                        if (isAvailable(ta, shuffled_courses[j]) == True) {
                             pushBack(availableTA, ta);
                         }
                     }
 
-                    for (int l = 0; l < courses[j].subject->required_labs; ++l) {
+
+                    for (int l = 0; l < shuffled_courses[j]->subject->required_labs; ++l) {
                         if (availableTA->size == 0) {
                             break;
                         }
@@ -528,10 +565,11 @@ void solve() {
                         int randomInd = rand() % availableTA->size;
                         TAGenetic *ta = getFromList(availableTA, randomInd);
 
-                        AssignTo(ta, &courses[j]);
+                        AssignTo(ta, shuffled_courses[j]);
 
                         if (ta->courses_teaching_count == TA_MAX_CLASS) {
                             removeFromList(availableTA, randomInd);
+                            removeByKey(taPool, ta, (int (*)(void *, void *)) cmpTA);
                         }
 
                     }
@@ -539,22 +577,271 @@ void solve() {
                     free(availableTA);
                 }
 
-                for (int j = 0; j < subjects_count; ++j) {
-                    printf("\t%s - %s, ", courses[j].subject->name,
-                           (courses[j].prof != NULL) ? courses[j].prof->professor->fullname : "NULL");
-                    printf("%d TAs: ", courses->TA_assigned);
-                    for (int l = 0; l < courses[j].TA_assigned; ++l) {
-                        printf("%s ", ((TAGenetic *) getFromList(courses[j].TAs, l))->TA->fullname);
-                    }
-                    printf("\n");
-                }
-
-
                 population[i].schedule = courses;
                 population[i].professors = profPool;
-                population[i].allTAs = taPool;
-                printf("\n\n");
+                population[i].allTAs = allTA;
+                population[i].TAs = taPool;
+                population[i].error = error(&(population[i]));
+                free(shuffled_courses);
+
+//                for (int j = 0; j < subjects_count; ++j) {
+//                    printf("\t%s - %s, ", population[i].schedule[j].subject->name,
+//                           (population[i].schedule[j].prof != NULL) ? population[i].schedule[j].prof->professor->fullname : "NULL");
+//                    printf("%d TAs: ", population[i].schedule->TA_assigned);
+//                    for (int l = 0; l < population[i].schedule[j].TA_assigned; ++l) {
+//                        printf("%s ", ((TAGenetic *) getFromList(population[i].schedule[j].TAs, l))->TA->fullname);
+//                    }
+//                    printf("\n");
+//                }
+//
+//                printf("Error: %d", population[i].error);
+//                printf("\n\n");
             }
+            // Random population created
+
+            qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
+//
+//            for (int i = 0; i < POPULATION_SIZE; ++i) {
+//                printf("#%3d:\n", i);
+//                for (int j = 0; j < subjects_count; ++j) {
+//                    printf("\t%s - %s, ", population[i].schedule[j].subject->name,
+//                           (population[i].schedule[j].prof != NULL)
+//                           ? population[i].schedule[j].prof->professor->fullname : "NULL");
+//                    printf("%d TAs: ", population[i].schedule->TA_assigned);
+//                    for (int l = 0; l < population[i].schedule[j].TA_assigned; ++l) {
+//                        printf("%s ", ((TAGenetic *) getFromList(population[i].schedule[j].TAs, l))->TA->fullname);
+//                    }
+//                    printf("\n");
+//                }
+//
+//                printf("Error: %d", population[i].error);
+//                printf("\n\n");
+//            }
+
+            for (int step = 0; step < EVOLUTION_STEPS; ++step) {
+                Individual *new_population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
+
+                for (int i = 0; i < BEST_COUNT; ++i) {
+                    memcpy(&(new_population[i]), &(population[i]), sizeof(Individual));
+                }
+                // TODO: don't free [0; BEST_COUNT) individuals
+
+                //Do reproduction with CROSSING_PARENTS_COUNT
+
+                for (int child_no = 0; child_no < POPULATION_SIZE - BEST_COUNT; ++child_no) {
+                    Individual first_parent = population[rand() % CROSSING_PARENTS_COUNT];
+                    Individual second_parent = population[rand() % CROSSING_PARENTS_COUNT];
+
+                    HashTable *TAbyName = malloc(sizeof(HashTable));
+                    hash_table_init(TAbyName, 5, MAX_ENTRY_SIZE, sizeof(TAGenetic *), cmpStr);
+
+                    HashTable *ProfbyName = malloc(sizeof(HashTable));
+                    hash_table_init(ProfbyName, 5, MAX_ENTRY_SIZE, sizeof(ProfessorGenetic *), cmpStr);
+
+                    Individual *child = malloc(sizeof(Individual));
+
+                    child->TAs = malloc(sizeof(List));
+                    initList(child->TAs, sizeof(TAGenetic *));
+
+                    child->allTAs = malloc(sizeof(List));
+                    initList(child->allTAs, sizeof(TAGenetic *));
+
+                    child->professors = malloc(sizeof(List));
+                    initList(child->professors, sizeof(ProfessorGenetic *));
+
+                    child->allprofs = malloc(sizeof(List));
+                    initList(child->allprofs, sizeof(ProfessorGenetic *));
+
+                    CourseGenetic *newGenome = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
+                    for (int j = 0; j < subjects_count; ++j) {
+                        newGenome[j].subject = (Subject *) getFromList(subjects, j);
+                        newGenome[j].prof = NULL;
+                        newGenome[j].TAs = malloc(sizeof(List));
+                        initList(newGenome[j].TAs, sizeof(TAGenetic *)); //TODO really this datatype?
+                        newGenome[j].TA_assigned = 0;
+                    }
+
+                    for (int j = 0; j < tas_count; ++j) {
+                        TAGenetic *new = malloc(sizeof(TAGenetic));
+                        new->TA = (Faculty *) getFromList(tas, j);
+                        new->courses_teaching_count = 0;
+                        new->courses_teaching = malloc(sizeof(List));
+                        initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                        pushBack(child->allTAs, new);
+                        pushBack(child->TAs, new);
+                        insert(TAbyName, new->TA->fullname, new);
+                    }
+
+                    for (int j = 0; j < profs_count; ++j) {
+                        ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
+                        new->professor = (Faculty *) getFromList(profs, j);
+                        new->courses_teaching_count = 0;
+                        new->courses_teaching = malloc(sizeof(List));
+                        initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
+                        new->isDoingWrongSubject = False;
+                        new->isBusy = False;
+                        pushBack(child->professors, new);
+                        pushBack(child->allprofs, new);
+                        insert(ProfbyName, new->professor->fullname, new);
+                    }
+
+
+                    child->schedule = newGenome;
+                    /*TODO: Протести мапу!  Сделать мапу из имен ТА в объекты для текущего индивида, чтобы можно было узнать:
+                     * Свободен ли текущий ТА или нет
+                     */
+
+                    for (int i = 0; i < subjects_count; ++i) {
+                        CourseGenetic *course = &(newGenome[i]);
+
+                        List *sourceAssistants = first_parent.schedule[i].TAs;
+
+                        List *availableAssistants = malloc(sizeof(List));
+                        initList(availableAssistants, sizeof(TAGenetic *));
+
+                        for (int k = 0; k < sourceAssistants->size; ++k) {
+                            TAGenetic *ta = get_el(TAbyName,
+                                                   ((TAGenetic *) (getFromList(sourceAssistants,
+                                                                               k)))->TA->fullname);
+                            if (ta != NULL && isAvailable(ta, course)) {
+                                pushBack(availableAssistants, ta);
+                            }
+                        }
+
+                        for (int j = 0; j < course->subject->required_labs; ++j) {
+                            //find try to find an available ta from the first parent
+
+
+                            if (availableAssistants->size != 0) {
+                                int randomInd = rand() % availableAssistants->size;
+                                TAGenetic *ta = getFromList(availableAssistants, randomInd);
+
+                                AssignTo(ta, course);
+
+                                if (ta->courses_teaching_count == TA_MAX_CLASS) {
+                                    removeByKey(availableAssistants, ta, (int (*)(void *, void *)) cmpTA);
+                                    removeByKey(child->TAs, ta, (int (*)(void *, void *)) cmpTA);
+                                    remove_el(TAbyName,
+                                              ta->TA->fullname); // раньше удаляло целиком объект с ключом - ТА
+                                }
+                                continue;
+                            }
+
+                            //try to find an available TA from the second parent
+                            freeListSaveData(availableAssistants);
+                            initList(availableAssistants, sizeof(TAGenetic *));
+                            sourceAssistants = second_parent.schedule[i].TAs;
+
+                            for (int k = 0; k < sourceAssistants->size; ++k) {
+                                TAGenetic *ta = get_el(TAbyName,
+                                                       ((TAGenetic *) (getFromList(sourceAssistants,
+                                                                                   k)))->TA->fullname);
+                                if (ta != NULL && isAvailable(ta, course)) {
+                                    pushBack(availableAssistants, ta);
+                                }
+                            }
+
+                            if (availableAssistants->size != 0) {
+                                int randomInd = rand() % availableAssistants->size;
+                                TAGenetic *ta = getFromList(availableAssistants, randomInd);
+
+                                AssignTo(ta, course);
+
+                                if (ta->courses_teaching_count == TA_MAX_CLASS) {
+                                    removeByKey(availableAssistants, ta, (int (*)(void *, void *)) cmpTA);
+                                    removeByKey(child->TAs, ta, (int (*)(void *, void *)) cmpTA);
+                                    remove_el(TAbyName, ta->TA->fullname);
+                                }
+                                continue;
+                            }
+
+                            //If there is any TA, pick random
+                            if (TAbyName->size == 0) continue;
+                            int randomInd = rand() % child->TAs->size;
+                            TAGenetic *ta = getFromList(child->TAs, randomInd);
+                            if (isAvailable(ta, course)) {
+                                AssignTo(ta, course);
+
+                                if (ta->courses_teaching_count == TA_MAX_CLASS) {
+                                    removeByKey(child->TAs, ta, (int (*)(void *, void *)) cmpTA);
+                                    remove_el(TAbyName, ta->TA->fullname);
+                                }
+                            }
+                        }
+                        freeListSaveData(availableAssistants);
+                        free(availableAssistants);
+
+                        //TA assigned; Assign professor:
+                        double probability = randDouble();
+                        Individual *emitter = NULL;
+                        if (probability < TAKE_FIRST_PARENT_GENE) {
+                            emitter = &first_parent;
+                        } else if (probability < TAKE_SECOND_PARENT_GENE) {
+                            emitter = &second_parent;
+                        }
+
+                        if (child->professors->size == 0) continue;
+
+                        if (emitter == NULL) {
+                            int randomInd = rand() % child->professors->size;
+                            ProfessorGenetic *prof = getFromList(child->professors, randomInd);
+                            AssignTo(prof, course);
+                            removeByKey(child->professors, prof, (int (*)(void *, void *)) cmpProf);
+                            remove_el(ProfbyName, prof->professor->fullname);
+                            continue;
+                        }
+
+
+                        ProfessorGenetic *parentProf = emitter->schedule[i].prof;
+                        if (parentProf == NULL) {
+                            continue;
+                        } else {
+                            ProfessorGenetic *childProf = get_el(ProfbyName, parentProf->professor->fullname);
+                            if (childProf == NULL) {
+                                if (child->professors->size == 0) continue;
+                                int randomInd = rand() % child->professors->size;
+                                childProf = getFromList(child->professors, randomInd);
+
+                                AssignTo(childProf, course);
+
+                                if (childProf->isBusy == True) {
+                                    removeFromList(child->professors, randomInd);
+                                    remove_el(ProfbyName, childProf->professor->fullname);
+                                }
+
+                            } else {
+                                AssignTo(childProf, course);
+                                if (childProf->isBusy == True) {
+                                    removeByKey(child->professors, childProf, (int (*)(void *, void *)) cmpProf);
+                                    remove_el(ProfbyName, childProf->professor->fullname);
+                                }
+                            }
+                        }
+
+
+                    }
+
+                    free_hash_table(ProfbyName);
+                    free_hash_table(TAbyName);
+
+//                    free(ProfbyName);
+//                    free(TAbyName);
+
+                    child->error = error(child);
+                    new_population[BEST_COUNT + child_no] = *child;
+                    free(child); // этот объект и объект выше - разные, но внутри ссылки одинаковые.
+                }
+                //TODO: fix a lot of memory leaks
+
+
+
+                population = new_population;
+                qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
+//                printf("%d) best - %d\n", step, population[0].error);
+                printf("%d) %d %d %d %d %d\n", step, population[0].error, population[249].error, population[499].error,
+                       population[749].error, population[999].error);
+            }
+
 
 //Population free start
             for (int i = 0; i < POPULATION_SIZE; ++i) {
@@ -581,6 +868,7 @@ void solve() {
 
                 for (int k = 0; k < subjects_count; ++k) {
                     freeListSaveData(population[i].schedule[k].TAs);
+                    free(population[i].schedule[k].TAs);
                 }
 
                 free(population[i].schedule);
@@ -590,10 +878,6 @@ void solve() {
 //population free end
 //TODO: поставь это на нужное место
 
-            for (int i = 0; i < subjects_count; ++i) {
-                free(standardCoursePool[i].TAs);
-            }
-            free(standardCoursePool);
 
             freeList(subjects, (void (*)(void *)) del_subject);
             freeList(profs, (void (*)(void *)) del_faculty);
@@ -779,6 +1063,24 @@ void removeFromList(List *list, int index) {
         list->cursor = list->cursor->prev;
         free(tmp);
     }
+}
+
+void removeByKey(List *list, void *key, int (*cmp)(void *, void *)) {
+    int ind = findIndex(list, key, cmp);
+    if (ind == -1)
+        return;
+    removeFromList(list, ind);
+}
+
+int findIndex(List *list, void *key, int (*cmp)(void *, void *)) {
+
+    for (int i = 0; i < list->size; ++i) {
+        if (cmp(key, getFromList(list, i)) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 Node *getNodeFromList(List *list, int ind) {
@@ -998,7 +1300,7 @@ ull hash(const void *data, size_t size) {
 void free_hash_entry(HashNode *node) {
     if (node != NULL) {
         if (node->key != NULL) free(node->key);
-        if (node->value != NULL) free(node->value);
+//        if (node->value != NULL) free(node->value);
     }
 }
 
@@ -1078,6 +1380,7 @@ void free_hash_table(HashTable *table) {
             while (node != NULL) {
                 if (node != table->datalist[i].tail) free(node->next);
                 free_hash_entry(node);
+//                free(node); // todo: do you need it?
                 node = node->prev;
                 table->size--;
             }
@@ -1104,7 +1407,7 @@ void rehash(HashTable *table) {
     }
     table->capacity *= 2;
     table->datalist = temp->datalist;
-    printf("New size: %zu\n", table->capacity);
+//    printf("New size: %zu\n", table->capacity);
     free(temp);
 }
 
@@ -1159,7 +1462,7 @@ void remove_el(HashTable *table, void *key) {
             table->datalist[index].head = NULL;
         }
         free(tmp->key);
-        free(tmp->value);
+//        free(tmp->value);
         free(tmp);
     }
 }
@@ -1272,6 +1575,24 @@ void AssignToProf(ProfessorGenetic *prof, CourseGenetic *course) {
     }
 }
 
+int errorProf(ProfessorGenetic *prof) {
+    int run_course_count = 0;
+    for (int i = 0; i < prof->courses_teaching->size; ++i) {
+        if (willRun(getFromList(prof->courses_teaching, i))) {
+            ++run_course_count;
+        }
+    }
+
+    if (run_course_count == 0)
+        return PROFESSOR_UNASSIGNED;
+    if (prof->isDoingWrongSubject == True)
+        return PROFESSOR_WRONG_SUBJECT;
+    if (run_course_count == 1)
+        return PROFESSOR_LACKING_CLASS;
+
+    return 0;
+}
+
 ///TAGenetic///
 char /*Bool*/ isAvailableTA(TAGenetic *ta, CourseGenetic *course) {
     return (ta->courses_teaching_count < TA_MAX_CLASS && isInList(ta->TA->trained_for, course->subject->name, cmpStr)) ?
@@ -1284,4 +1605,58 @@ void AssignToTA(TAGenetic *ta, CourseGenetic *course) {
 
     pushBack(ta->courses_teaching, course);
     ++ta->courses_teaching_count;
+}
+
+int errorTA(TAGenetic *ta) {
+    int run_course_count = 0;
+    for (int i = 0; i < ta->courses_teaching->size; ++i) {
+        if (willRun(getFromList(ta->courses_teaching, i))) { //TODO do TA really have one course in list multiple times?
+            ++run_course_count;
+        }
+    }
+
+    return (TA_MAX_CLASS - run_course_count) * TA_LACKING_CLASS;
+}
+
+///CourseGenetic///
+int errorCourse(CourseGenetic *course) {
+    if (willRun(course)) {
+        int lacking_students = course->subject->selectedCount - course->subject->allowed_students;
+        return (lacking_students > 0) ? lacking_students * STUDENT_LACKING_CLASS : 0;
+    } else {
+        return course->subject->selectedCount * STUDENT_LACKING_CLASS + COURSE_NOT_RUN;
+    }
+}
+
+char /*Bool*/ willRun(CourseGenetic *course) {
+    return (course->prof != NULL && course->TAs->size == course->subject->required_labs) ?
+           True : False;
+}
+
+///Individual///
+int errorIndividual(Individual *individual) {
+    int overall_error = 0;
+    int subj = 0;
+    int prof = 0;
+    int ta = 0;
+    for (int i = 0; i < subjects_count; ++i) {
+        subj += error(&(individual->schedule[i]));
+        overall_error += error(&(individual->schedule[i]));
+    }
+
+    for (int i = 0; i < individual->allprofs->size; ++i) {
+        prof += error((ProfessorGenetic *) (getFromList(individual->allprofs, i)));
+        overall_error += error((ProfessorGenetic *) (getFromList(individual->allprofs, i)));
+    }
+
+    for (int i = 0; i < individual->allTAs->size; ++i) {
+        ta += error((TAGenetic *) (getFromList(individual->allTAs, i)));
+        overall_error += error((TAGenetic *) (getFromList(individual->allTAs, i)));
+    }
+
+    return overall_error;
+}
+
+int cmpIndividuals(Individual *i1, Individual *i2) {
+    return i1->error - i2->error;
 }
