@@ -37,7 +37,7 @@ size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 const ull z = 7;
 
 ///Evolution Constants///
-#define POPULATION_SIZE 10
+#define POPULATION_SIZE 1000
 #define EVOLUTION_STEPS 1000
 #define BEST_FIT_PERCENTAGE 0.1
 #define GOOD_FIT_PERCENTAGE 0.2
@@ -581,19 +581,6 @@ void solve() {
                 population[i].TAs = taPool;
                 population[i].error = error(&(population[i]));
                 free(shuffled_courses);
-
-//                for (int j = 0; j < subjects_count; ++j) {
-//                    printf("\t%s - %s, ", population[i].schedule[j].subject->name,
-//                           (population[i].schedule[j].prof != NULL) ? population[i].schedule[j].prof->professor->fullname : "NULL");
-//                    printf("%d TAs: ", population[i].schedule->TA_assigned);
-//                    for (int l = 0; l < population[i].schedule[j].TA_assigned; ++l) {
-//                        printf("%s ", ((TAGenetic *) getFromList(population[i].schedule[j].TAs, l))->TA->fullname);
-//                    }
-//                    printf("\n");
-//                }
-//
-//                printf("Error: %d", population[i].error);
-//                printf("\n\n");
             }
             // Random population created
 
@@ -615,6 +602,7 @@ void solve() {
 //                printf("Error: %d", population[i].error);
 //                printf("\n\n");
 //            }
+            flag = 2;
 
             for (int step = 0; step < EVOLUTION_STEPS; ++step) {
                 Individual *new_population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
@@ -703,8 +691,8 @@ void solve() {
 
                                 AssignTo(ta, course);
 
+                                removeByKey(availableAssistants, ta, (int (*)(void *, void *)) cmpTA);
                                 if (ta->courses_teaching_count == TA_MAX_CLASS) {
-                                    removeByKey(availableAssistants, ta, (int (*)(void *, void *)) cmpTA);
                                     removeByKey(child->TAs, ta, (int (*)(void *, void *)) cmpTA);
                                     remove_el(TAbyName,
                                               ta->TA->fullname); // раньше удаляло целиком объект с ключом - ТА
@@ -732,8 +720,8 @@ void solve() {
 
                                 AssignTo(ta, course);
 
+                                removeByKey(availableAssistants, ta, (int (*)(void *, void *)) cmpTA);
                                 if (ta->courses_teaching_count == TA_MAX_CLASS) {
-                                    removeByKey(availableAssistants, ta, (int (*)(void *, void *)) cmpTA);
                                     removeByKey(child->TAs, ta, (int (*)(void *, void *)) cmpTA);
                                     remove_el(TAbyName, ta->TA->fullname);
                                 }
@@ -741,7 +729,8 @@ void solve() {
                             }
 
                             //If there is any TA, pick random
-                            if (TAbyName->size == 0) continue;
+                            if (child->TAs->size == 0)
+                                continue;
                             int randomInd = rand() % child->TAs->size;
                             TAGenetic *ta = getFromList(child->TAs, randomInd);
                             if (isAvailable(ta, course)) {
@@ -844,8 +833,8 @@ void solve() {
                 population = new_population;
                 qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
 //                printf("%d) best - %d\n", step, population[0].error);
-                printf("%d) %d %d %d %d %d\n", step, population[0].error, population[249].error, population[499].error,
-                       population[749].error, population[999].error);
+//                printf("%d) %d %d %d %d %d\n", step, population[0].error, population[249].error, population[499].error,
+//                       population[749].error, population[999].error);
             }
 
 
