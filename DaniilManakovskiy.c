@@ -35,6 +35,7 @@ size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 ///Hash Table Constants///
 #define MAX_LOAD_FACTOR 0.75
 const ull z = 7;
+char *sep = " "; // separator between first and last names
 
 ///Evolution Constants///
 #define POPULATION_SIZE 1000
@@ -46,7 +47,7 @@ const ull z = 7;
 #define TAKE_FIRST_PARENT_GENE ((TAKE_SECOND_PARENT_GENE)/2)
 #define BEST_COUNT (int)(POPULATION_SIZE*BEST_FIT_PERCENTAGE)
 #define CROSSING_PARENTS_COUNT (int)(POPULATION_SIZE * GOOD_FIT_PERCENTAGE)
-#define MAX_STEPS_WITHOUT_IMPROVEMENT 100
+#define MAX_STEPS_WITHOUT_IMPROVEMENT 25
 
 ///Error Penalties///
 #define COURSE_NOT_RUN 20
@@ -192,6 +193,7 @@ typedef struct subject {
     int required_labs;
     int allowed_students;
     int selectedCount; //how many student selected this course
+    List *required_by;
 } Subject;
 
 
@@ -250,14 +252,14 @@ void new_faculty(Faculty *new, char *first_name, char *last_name);
 
 void new_student(Student *new, char *first_name, char *last_name, char *ID);
 
-void new_professorGenetic(ProfessorGenetic* new, Faculty* prof);
+void new_professorGenetic(ProfessorGenetic *new, Faculty *prof);
 
-void new_TAGenetic(TAGenetic *new, Faculty* TA);
+void new_TAGenetic(TAGenetic *new, Faculty *TA);
 
-void new_CourseGenetic(CourseGenetic* new, Subject* subject);
+void new_CourseGenetic(CourseGenetic *new, Subject *subject);
 
 ///Copy methods//
-void copyProfessorGenetic(ProfessorGenetic* dest, ProfessorGenetic* src);
+void copyProfessorGenetic(ProfessorGenetic *dest, ProfessorGenetic *src);
 
 
 ///Destructors//
@@ -269,7 +271,7 @@ void del_student(Student *s);
 
 void del_Professor_genetic(ProfessorGenetic *prof);
 
-void del_TA_genetic(TAGenetic* ta);
+void del_TA_genetic(TAGenetic *ta);
 
 ///ProfessorGenetic///
 char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course);
@@ -443,6 +445,9 @@ void solve() {
             snprintf(num, FILENAME_SIZE, "output%d.txt", test);
 //            freopen(num, "w", stdout);
 
+            int current_result = -1;
+            int steps_without_improvement = 0;
+
             //solve task for a particular input
             List *subjects = malloc(sizeof(List));
             List *profs = malloc(sizeof(List));
@@ -495,7 +500,7 @@ void solve() {
 
                 for (int j = 0; j < profs_count; ++j) {
                     ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
-                    new_professorGenetic(new, (Faculty*)getFromList(profs, j));
+                    new_professorGenetic(new, (Faculty *) getFromList(profs, j));
 
                     pushBack(profPool, new);
                     pushBack(population[i].allprofs, new);
@@ -795,7 +800,9 @@ void solve() {
 
                     }
 
+                    flag = 4;
                     free_hash_table(ProfbyName);
+                    flag = 5;
                     free_hash_table(TAbyName);
 
 //                    free(ProfbyName);
@@ -832,9 +839,22 @@ void solve() {
 
                 population = new_population;
                 qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
-//                printf("%d) best - %d\n", step, population[0].error);
+
+                printf("%d) best - %d\n", step, population[0].error);
 //                printf("%d) %d %d %d %d %d\n", step, population[0].error, population[249].error, population[499].error,
 //                       population[749].error, population[999].error);
+
+                if (population[0].error == current_result) {
+                    ++steps_without_improvement;
+                } else {
+                    current_result = population[0].error;
+                    steps_without_improvement = 0;
+                }
+
+                if (steps_without_improvement == MAX_STEPS_WITHOUT_IMPROVEMENT || current_result == 0) {
+//                    printf("%d\n", current_result);
+                    break;
+                }
             }
 
 
@@ -1318,11 +1338,14 @@ void insert(HashTable *table, void *key, void *value) {
     HashNode *node = (table->datalist[index]).head;
 
     HashNode *item = (HashNode *) malloc(sizeof(HashNode));
-    item->key = malloc(table->key_size);
-//    item->value = malloc(table->value_size);
+
     item->next = NULL;
     item->prev = NULL;
-    memcpy(item->key, key, table->key_size);
+    item->key = malloc(table->key_size);
+//    item->value = malloc(table->value_size);
+    memcpy(item->key,
+            key,
+            table->key_size);
 //    memcpy(item->value, value, table->value_size);
     item->value = value;
 
@@ -1362,20 +1385,24 @@ void insert(HashTable *table, void *key, void *value) {
 void free_hash_table(HashTable *table) {
     if (table != NULL) {
         HashNode *node = NULL;
+        HashNode *prev = NULL;
         for (int i = 0; i < table->capacity; ++i) {
             //start from tail
             node = table->datalist[i].tail;
             //if hash_list is empty - go next
-            if (node == NULL) continue;
+            if (node == NULL)
+                continue;
             //until node passed the head of a hash_list, free it, then move_back
             while (node != NULL) {
                 if (node != table->datalist[i].tail) free(node->next);
                 free_hash_entry(node);
-                free(node); // todo: do you need it?
-                node = node->prev;
+                prev = node->prev;
+                free(node);
+                node = prev;
                 table->size--;
             }
-            if (table->size == 0) break;
+            if (table->size == 0)
+                break;
         }
         free(table->datalist);
         free(table);
@@ -1474,22 +1501,17 @@ void new_faculty(Faculty *new, char *first_name, char *last_name) {
     if (new == NULL)
         return;
     // full_name ="<first_name> <last_name><\0>"
-    size_t name_length = strlen(first_name) + strlen(last_name) + 2;
-    char *full_name = (char *) malloc(name_length);
-    empty(full_name, name_length);
-    char *to_append = strcat(full_name, first_name);
-    to_append = strcat(to_append, " ");
-    strcat(to_append, last_name);
 
 
-    new->fullname = malloc(strlen(full_name) + 1);
-    strcpy(new->fullname, full_name);
+    new->fullname = (char*)malloc(2 + strlen(first_name) + strlen(last_name));
+    strcpy(new->fullname, first_name);
+    strcat(new->fullname, sep);
+    strcat(new->fullname, last_name);
 //    new->trained_for_count = 0;
 
 //    new->trained_for = malloc(sizeof(List));
 //    initList(new->trained_for, MAX_ENTRY_SIZE);
 
-    free(full_name);
 }
 
 void new_student(Student *new, char *first_name, char *last_name, char *ID) {
@@ -1516,7 +1538,7 @@ void new_student(Student *new, char *first_name, char *last_name, char *ID) {
 
 }
 
-void new_professorGenetic(ProfessorGenetic* new, Faculty* prof){
+void new_professorGenetic(ProfessorGenetic *new, Faculty *prof) {
     new->professor = prof;
     new->courses_teaching_count = 0;
     new->isDoingWrongSubject = False;
@@ -1526,19 +1548,19 @@ void new_professorGenetic(ProfessorGenetic* new, Faculty* prof){
 
 }
 
-void new_TAGenetic(TAGenetic *new, Faculty* TA){
+void new_TAGenetic(TAGenetic *new, Faculty *TA) {
     new->TA = TA;
     new->courses_teaching_count = 0;
     new->courses_teaching = malloc(sizeof(List));
     initList(new->courses_teaching, sizeof(CourseGenetic *)); //TODO really this datatype?
 }
 
-void new_CourseGenetic(CourseGenetic* new, Subject* subject){
+void new_CourseGenetic(CourseGenetic *new, Subject *subject) {
     new->prof = NULL;
     new->subject = subject;
     new->TA_assigned = 0;
     new->TAs = malloc(sizeof(List));
-    initList(new->TAs, sizeof(TAGenetic*)); //TODO really this datatype?
+    initList(new->TAs, sizeof(TAGenetic *)); //TODO really this datatype?
 }
 
 
@@ -1563,7 +1585,7 @@ void del_Professor_genetic(ProfessorGenetic *prof) {
     free(prof->courses_teaching);
 }
 
-void del_TA_genetic(TAGenetic* ta){
+void del_TA_genetic(TAGenetic *ta) {
     freeListSaveData(ta->courses_teaching);
     free(ta->courses_teaching);
 }
