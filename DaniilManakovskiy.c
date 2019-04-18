@@ -1,7 +1,5 @@
 /**
  * TODO: validate all input
- * - All names must contain english letters only
- * - Student's id must contain 5 chars
  * - TA must have exactly 1 trained_for course
  * - Prof has at least 1 trained_for course
  * - Student has at least 1 required course
@@ -37,7 +35,6 @@ size_t MAX_BUFFER_SIZE = MAX_ENTRY_SIZE * MAX_ENTRY_COUNT;
 
 ///Hash Table Constants///
 #define MAX_LOAD_FACTOR 0.75
-const ull z = 7;
 char *sep = " "; // separator between first and last names
 
 ///Evolution Constants///
@@ -50,7 +47,7 @@ char *sep = " "; // separator between first and last names
 #define TAKE_FIRST_PARENT_GENE ((TAKE_SECOND_PARENT_GENE)/2)
 #define BEST_COUNT (int)(POPULATION_SIZE*BEST_FIT_PERCENTAGE)
 #define CROSSING_PARENTS_COUNT (int)(POPULATION_SIZE * GOOD_FIT_PERCENTAGE)
-#define MAX_STEPS_WITHOUT_IMPROVEMENT 25
+#define MAX_STEPS_WITHOUT_IMPROVEMENT 100
 
 ///Error Penalties///
 #define COURSE_NOT_RUN 20
@@ -159,7 +156,7 @@ void init_datalist(HashList *datalist, size_t capacity);
 void hash_table_init(HashTable *table, size_t capacity, size_t key_size,
                      int (*key_cmp)(void *, void *));
 
-void insert(HashTable *table, void *key, void *value);
+void insert(HashTable *table, char *key, void *value);
 
 void free_hash_table(HashTable *table);
 
@@ -640,11 +637,11 @@ void solve(int max_test) {
 
                     // Maps TA's Fullname -> object into child
                     HashTable *TAbyName = malloc(sizeof(HashTable));
-                    hash_table_init(TAbyName, 5, MAX_ENTRY_SIZE, cmpStr);
+                    hash_table_init(TAbyName, (int)(tas_count*1.5), MAX_ENTRY_SIZE, cmpStr);
 
                     // Maps Professor's Fullname -> object into child
                     HashTable *ProfbyName = malloc(sizeof(HashTable));
-                    hash_table_init(ProfbyName, 5, MAX_ENTRY_SIZE, cmpStr);
+                    hash_table_init(ProfbyName, (int)(profs_count*1.5), MAX_ENTRY_SIZE, cmpStr);
 
                     Individual *child = malloc(sizeof(Individual));
 
@@ -852,7 +849,7 @@ void solve(int max_test) {
 
                 population = new_population;
                 qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
-
+//                fprintf(stderr,"%d - %d\n", step, population[0].error);
                 if (population[0].error == current_result) {
                     ++steps_without_improvement;
                 } else {
@@ -1122,7 +1119,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                 pushBack(subj->required_by, stringPair);
                 subj->selectedCount++;
             }
-            token = strtok_single(NULL, " "); //TODO: придумай, как валидировать пробел в конце строки
+            token = strtok_single(NULL, " ");
 
         }
 
@@ -1521,7 +1518,7 @@ hash_table_init(HashTable *table, size_t capacity, size_t key_size, int (*key_cm
     init_datalist(table->datalist, capacity);
 }
 
-void insert(HashTable *table, void *key, void *value) {
+void insert(HashTable *table, char *key, void *value) {
     ull index = hash(key, table->key_size) % table->capacity;
 
     HashNode *node = (table->datalist[index]).head;
@@ -1531,7 +1528,7 @@ void insert(HashTable *table, void *key, void *value) {
     item->next = NULL;
     item->prev = NULL;
     item->key = malloc(table->key_size);
-    memcpy(item->key, key, table->key_size);
+    strcpy(item->key, key);
     item->value = value;
 
     if (node == NULL) {
@@ -1585,19 +1582,27 @@ void free_hash_table(HashTable *table) {
 }
 
 void rehash(HashTable *table) {
+//    fprintf(stderr, "REHASH!\n");
     HashList *old = table->datalist;
     HashTable *temp = malloc(sizeof(HashTable));
     hash_table_init(temp, 2 * table->capacity, table->key_size, table->key_comparator);
 
+    HashNode *list = NULL;
+    HashNode* next = NULL;
+
     for (int i = 0; i < table->capacity; ++i) {
-        HashNode *list = old[i].head;
+        list = old[i].head;
         // if hash_list contains anything, insert it into a new ht
         while (list != NULL) {
             insert(temp, list->key, list->value);
-            list = list->next;
+            free(list->key);
+            next = list->next;
+            free(list);
+            list = next;
         }
     }
     table->capacity *= 2;
+    free(table->datalist);
     table->datalist = temp->datalist;
     free(temp);
 }
