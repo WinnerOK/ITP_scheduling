@@ -68,6 +68,10 @@ char *sep = " "; // separator between first and last names
 #define True 1
 #define False 0
 
+#define PROF_DELIMITER "P"
+#define TA_DELIMITER "T"
+#define STUDENT_DELIMITER "S"
+
 
 /////////////////////////////////Data structures/////////////////////////////////
 typedef struct stringPair {
@@ -282,6 +286,11 @@ void printEmail();
 void solve();
 
 int parseInput(List *subjects, List *profs, List *TAs, List *students);
+/////////////////////////////////Input Validation/////////////////////////////////
+
+char /*Bool*/ checkID(char *id);
+
+char /*Bool*/ checkName(char *name);
 
 int findAllNumbers(char *str, int max_ints, long found_numbers[]);
 
@@ -313,8 +322,6 @@ int tas_count = 0;
 int students_count = 0;
 
 /////////////////////////////////Util functions/////////////////////////////////
-int isDigit(char c) { return (c >= '0' && c <= '9') ? 1 : 0; }
-
 void freeIfPossible(void *p) {
     if (p != NULL) free(p);
 }
@@ -344,11 +351,7 @@ void swap(void **pa, void **pb) {
     *pb = pc;
 }
 
-int k = 0;
-
 CourseGenetic **shuffle(CourseGenetic *arr, int n) {
-    ++k;
-    CourseGenetic c = arr[0];
     CourseGenetic **result = (CourseGenetic **) malloc(subjects_count * sizeof(CourseGenetic *));
 
     for (int k = 0; k < n; ++k) {
@@ -357,20 +360,10 @@ CourseGenetic **shuffle(CourseGenetic *arr, int n) {
 
     for (int i = n - 1; i > 0; --i) {
         int j = rand() % (i + 1);
-        swap(&(result[i]), &(result[j]));
+        swap((void **) &(result[i]), (void **) &(result[j]));
     }
 
     return result;
-}
-
-char checkID(char *id) {
-    if (strlen(id) != ID_SIZE)
-        return 1;
-    for (int i = 0; i < ID_SIZE; ++i) {
-        if (!isalnum(id[i]))
-            return 1;
-    }
-    return 0;
 }
 
 double randDouble() {
@@ -381,7 +374,7 @@ void getFullName(char *fullname, char *first_name, char *last_name) {
     strcpy(fullname, first_name);
     strcat(fullname, sep);
     strcat(fullname, last_name);
-    fprintf(stderr, "|%s| - %d\n", fullname, strlen(fullname) );
+//    fprintf(stderr, "|%s| - %d\n", fullname, strlen(fullname) );
 }
 
 void introduce() {
@@ -463,7 +456,7 @@ void solve() {
             }
 
 
-            printf("\n------Done with input------\n");
+//            printf("\n------Done with input------\n");
             Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
 
             // generate random population
@@ -519,7 +512,6 @@ void solve() {
                     }
 
                     AssignTo(prof, shuffled_courses[j]);
-//                    shuffled_courses[j]
                     if (prof->isBusy == True) {
                         removeFromList(profPool, randomInd);
                     }
@@ -779,7 +771,6 @@ void solve() {
 
                     }
 
-                    //TODO: fix a big memory leak
                     free_hash_table(ProfbyName);
                     free_hash_table(TAbyName);
 
@@ -817,7 +808,7 @@ void solve() {
                 population = new_population;
                 qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
 
-                printf("%d) best - %d\n", step, population[0].error);
+//                printf("%d) best - %d\n", step, population[0].error);
 //                printf("%d) %d %d %d %d %d\n", step, population[0].error, population[249].error, population[499].error,
 //                       population[749].error, population[999].error);
 
@@ -847,6 +838,7 @@ void solve() {
                 }
             }
             error(&(population[0]), True);
+            printf("Total score is %d.", population[0].error);
 
 
 //Population free start
@@ -884,6 +876,7 @@ void solve() {
             free(tas);
             free(students);
         } else {
+//             TODO доделай поведение, если одного файла не существует
             break;
         }
     }
@@ -905,40 +898,74 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             ++course_name_end_pos;
             ++cursor;
         }
-        // if nonletter char met, it must be a space followed by a digit
+        strncpy(course_name, global_buffer, course_name_end_pos);
+        // if non-letter char met, it must be a space followed by a digit
         if (!(*cursor == ' ' && isdigit(*(cursor + 1)))) {
-            return 1;
+            free(course_name);
+            return 10;
         }
+        // If name does not satisfy given contraints
+        if (checkName(course_name) == False) {
+            free(course_name);
+            return 20;
+        }
+
         ++cursor;
         long nums[2];
+        // if 2 number have not been found or they overflowed
         if (findAllNumbers(cursor, 2, nums) != 0) {
-            return 2;
+            free(course_name);
+            return 30;
         }
-        strncpy(course_name, global_buffer, course_name_end_pos);
+
         labs_required = nums[0];
         students_allowed = nums[1];
+        // if information about course contains negative numbers (it must be handled above, but for any case)
+        // or zeroes
+        if (labs_required <= 0 || students_allowed <= 0) {
+            free(course_name);
+            return 35;
+        }
+
+        //If some course was introduced twice
+        if (get_el(subjectByName, course_name) != NULL) {
+            free(course_name);
+            return 36;
+        }
+
         Subject *n = (Subject *) malloc(sizeof(Subject));
         new_subject(n, course_name, labs_required, students_allowed);
         pushBack(subjects, n);
         insert(subjectByName, course_name, n);
         subjects_count++;
         free(course_name);
-//        free(n);
+
+
     }
     //EOF right after course block is unacceptable
     if (strcmp(global_buffer, "P\n") != 0)
-        return 3;
+        return 40;
 
     int status = PROFESSOR; // what group is being read
 
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1) {
+        // Performs changing of group of people Profs -> TAs
         if (strcmp(global_buffer, "T\n") == 0) {
-            status = TA;
-            continue;
+            if (status == PROFESSOR) {
+                status = TA;
+                continue;
+            } else {
+                return 41;
+            }
         }
+        // TAs -> Students
         if (strcmp(global_buffer, "S\n") == 0) {
-            status = STUDENT;
-            continue;
+            if (status == TA) {
+                status = STUDENT;
+                continue;
+            } else {
+                return 42;
+            }
         }
         trim();
         // tokenize given string by spaces
@@ -950,7 +977,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         token = strtok(NULL, " ");
 //        char *surname = malloc(strlen(token) + 1);
 //        strcpy(surname, token);
-        char* surname = strdup(token);
+        char *surname = strdup(token);
         token = strtok(NULL, " ");
 
         char *fullname = (char *) malloc((2 + strlen(name) + strlen(surname)) * sizeof(char));
@@ -979,7 +1006,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             if (status == STUDENT) {
                 Subject *subj = get_el(subjectByName, token);
                 if (subj == NULL) {
-                    return 4; // student requires the course that doesn't exists
+                    return 50; // student requires the course that doesn't exists
                 }
                 StringPair *stringPair = malloc(sizeof(StringPair));
                 stringPair->fullname = strdup(fullname);
@@ -1042,13 +1069,14 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
     //
     if (status != STUDENT || students_count == 0)
-        return 6;
+        return 60;
 
     return 0;
 }
 
+/////////////////////////////////Input Validation/////////////////////////////////
 int findAllNumbers(char *str, int max_ints, long found_numbers[]) {
-    if (!isdigit(str[0])) {
+    if (isdigit(str[0]) == 0) {
         return 1;
     }
     if (str[0] == '0' && isdigit(str[1])) return 1;
@@ -1124,14 +1152,40 @@ int findAllNumbers(char *str, int max_ints, long found_numbers[]) {
     return (found_number_count == max_ints) ? 0 : 1;
 }
 
+
+char /*Bool*/ checkID(char *id) {
+    if (id != NULL) {
+        if (strlen(id) != ID_SIZE)
+            return False;
+        for (int i = 0; i < ID_SIZE; ++i) {
+            if (isalnum(id[i]) == 0) {
+                return False;
+            }
+        }
+        return True;
+    }
+    return False;
+}
+
+char /*Bool*/ checkName(char *name) {
+    if (name != NULL) {
+        for (int i = 0; i < strlen(name); ++i) {
+            if (isalpha(name[i]) == 0) {
+                return False;
+            }
+        }
+        if (strcmp(name, PROF_DELIMITER) == 0 ||
+            strcmp(name, STUDENT_DELIMITER) == 0 ||
+            strcmp(name, TA_DELIMITER) == 0) {
+            return False;
+        }
+        return True;
+    }
+    return False;
+}
+
 /////////////////////////////////Data structures/////////////////////////////////
 ///Linked List///
-
-void copyList(List *dest, List *src) {
-    for (int i = 0; i < src->size; ++i) {
-        pushBack(dest, getFromList(src, i));
-    }
-}
 
 void removeFromList(List *list, int index) {
     Node *tmp = getNodeFromList(list, index);
@@ -1356,16 +1410,13 @@ void free_hash_entry(HashNode *node) {
 
 
 void
-hash_table_init(HashTable *table, size_t capacity, size_t key_size, size_t value_size, int (*key_cmp)(void *, void *)/*,
-                void (*key_destructor)(void *), void (*value_destructor)(void *)*/) {
+hash_table_init(HashTable *table, size_t capacity, size_t key_size, size_t value_size, int (*key_cmp)(void *, void *)) {
     table->key_size = key_size;
     table->value_size = value_size;
     table->capacity = capacity;
     table->datalist = (HashList *) malloc(capacity * sizeof(HashList));
     table->key_comparator = key_cmp;
     table->size = 0;
-//    table->key_destructor = key_destructor;
-//    table->value_destructor = value_destructor;
     init_datalist(table->datalist, capacity);
 }
 
@@ -1441,7 +1492,7 @@ void free_hash_table(HashTable *table) {
 }
 
 void rehash(HashTable *table) {
-    fprintf(stderr, "rehash\n");
+//    fprintf(stderr, "rehash\n");
     HashList *old = table->datalist;
     HashTable *temp = malloc(sizeof(HashTable));
     hash_table_init(temp, 2 * table->capacity, table->key_size, table->value_size, table->key_comparator);
