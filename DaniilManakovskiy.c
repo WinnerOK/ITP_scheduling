@@ -10,6 +10,7 @@
  * - ПРОВЕРЬ НА ПРОБЕЛЫ В КОНЦЕ СТРОКИ И ПУСТУЮ СТРОКУ В КОНЦЕ - ИХ БЫТЬ НЕ ДОЛЖНО
  */
 
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +65,8 @@ char *sep = " "; // separator between first and last names
 
 ///Constraints///
 #define TA_MAX_CLASS 4
+#define PROFESSOR_MAX_TRAINED_COURSES_TEACHING 2
+//hardcoded that Professor can teach only 1 untrained course
 
 ///Utility Constants///
 #define True 1
@@ -138,7 +141,7 @@ typedef struct {
 typedef struct {
     HashList *datalist;
     size_t size, capacity;
-    size_t key_size, value_size;
+    size_t key_size;
 
     int (*key_comparator)(void *, void *);
     /* 1: key1 > key2
@@ -154,7 +157,7 @@ void free_hash_entry(HashNode *node);
 void init_datalist(HashList *datalist, size_t capacity);
 
 void hash_table_init(HashTable *table, size_t capacity, size_t key_size,
-                     size_t value_size, int (*key_cmp)(void *, void *));
+                     int (*key_cmp)(void *, void *));
 
 void insert(HashTable *table, void *key, void *value);
 
@@ -284,9 +287,11 @@ int cmpIndividuals(Individual *i1, Individual *i2);
 /////////////////////////////////Functions used for solving/////////////////////////////////
 void printEmail();
 
-void solve();
+void solve(int max_test);
 
 int parseInput(List *subjects, List *profs, List *TAs, List *students);
+
+int findMaximumInputFile();
 /////////////////////////////////Input Validation/////////////////////////////////
 
 char /*Bool*/ checkID(char *id);
@@ -296,7 +301,7 @@ char /*Bool*/ checkName(char *name);
 int findAllNumbers(char *str, int max_ints, long found_numbers[]);
 
 // Modified version of strtok from the standard library that does not skip the block
-// betwee 2 consecutive delimiters.
+// between 2 consecutive delimiters.
 // Retrieved from: https://stackoverflow.com/a/8706031
 char *strtok_single(char *str, char const *delims);
 
@@ -322,10 +327,12 @@ char *strtok_single(char *str, char const *delims);
 /////////////////////////////////Global variables/////////////////////////////////
 char *global_buffer;
 HashTable *subjectByName = NULL;
-int subjects_count = 0;
-int profs_count = 0;
-int tas_count = 0;
-int students_count = 0;
+HashTable *professorPresence = NULL;
+HashTable *TAPresence = NULL;
+int subjects_count;
+int profs_count;
+int tas_count;
+int students_count;
 
 /////////////////////////////////Util functions/////////////////////////////////
 void freeIfPossible(void *p) {
@@ -333,7 +340,7 @@ void freeIfPossible(void *p) {
 }
 
 char /*Bool*/ isValid(const char *token) {
-    return (*token);
+    return token != NULL && (*token) != '\0';
 }
 
 // removes \n from global_buffer
@@ -421,7 +428,7 @@ int main() {
     srand((unsigned int) time(NULL));
     global_buffer = (char *) malloc(MAX_BUFFER_SIZE);
     printEmail();
-    solve();
+    solve(findMaximumInputFile());
 
     free(global_buffer);
     return 0;
@@ -433,15 +440,30 @@ void printEmail() {
     fclose(email);
 }
 
-void solve() {
-    for (int test = 1; test <= MAXN; ++test) {
-        char num[FILENAME_SIZE];
+int findMaximumInputFile() {
+    char num[FILENAME_SIZE];
+    for (int test = MAXN; test >= 1; --test) {
         //writes to the buffer filename of the current input file
         snprintf(num, FILENAME_SIZE, "input%d.txt", test);
-        // if input file exist, solve the problem
-        if (freopen(num, "r", stdin) != NULL) {
-            snprintf(num, FILENAME_SIZE, "output%d.txt", test);
-//            freopen(num, "w", stdout);
+        FILE *file;
+        if ((file = fopen(num, "r"))) {
+            fclose(file);
+            return test;
+        }
+    }
+    return 0;
+}
+
+void solve(int max_test) {
+    char inputFile[FILENAME_SIZE];
+    char outputFile[FILENAME_SIZE];
+    for (int test = 1; test <= max_test; ++test) {
+        //writes to the buffer filename of the current input file
+        snprintf(inputFile, FILENAME_SIZE, "input%d.txt", test);
+        snprintf(outputFile, FILENAME_SIZE, "DaniilManakovskiyOutput%d.txt", test);
+        // if input file exist, solve the problem, otherwise print error
+        freopen(outputFile, "w", stdout);
+        if (freopen(inputFile, "r", stdin) != NULL) {
 
             int current_result = -1;
             int steps_without_improvement = 0;
@@ -458,9 +480,21 @@ void solve() {
             initList(tas);
             initList(students);
 
+            subjects_count = 0;
+            profs_count = 0;
+            tas_count = 0;
+            students_count = 0;
+
 
             subjectByName = (HashTable *) malloc(sizeof(HashTable));
-            hash_table_init(subjectByName, 5, MAX_ENTRY_SIZE, sizeof(Subject *), cmpStr);
+            hash_table_init(subjectByName, 5, MAX_ENTRY_SIZE, cmpStr);
+
+            professorPresence = (HashTable *) malloc(sizeof(HashTable));
+            hash_table_init(professorPresence, 5, MAX_ENTRY_SIZE, cmpStr);
+
+            TAPresence = (HashTable *) malloc(sizeof(HashTable));
+            hash_table_init(TAPresence, 5, MAX_ENTRY_SIZE, cmpStr);
+
 
             if (parseInput(subjects, profs, tas, students) != 0) {
                 printf("Invalid input.");
@@ -468,11 +502,15 @@ void solve() {
                 freeList(profs, (void (*)(void *)) del_faculty);
                 freeList(tas, (void (*)(void *)) del_faculty);
                 freeList(students, (void (*)(void *)) del_student);
+                free_hash_table(TAPresence);
+                free_hash_table(professorPresence);
 
                 freeAll(4, subjects, profs, tas, students);
                 continue;
             }
 
+            free_hash_table(TAPresence);
+            free_hash_table(professorPresence);
 
 //            printf("\n------Done with input------\n");
             Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
@@ -533,24 +571,25 @@ void solve() {
                     }
 
                     AssignTo(prof, shuffled_courses[j]);
-                    if (prof->isBusy == True) {
+                    if (prof->isBusy) {
                         removeFromList(profPool, randomInd);
                     }
                 }
 
-                // All professors assigned
+                // All professors assigned, perform the same assignment for TAs
                 for (int j = 0; j < subjects_count; ++j) {
+                    //Construct a list of TAs that now can teach current course
                     List *availableTA = malloc(sizeof(List));
                     initList(availableTA);
                     for (int k = 0; k < taPool->size; ++k) {
                         TAGenetic *ta = getFromList(taPool, k);
 
-                        if (isAvailable(ta, shuffled_courses[j]) == True) {
+                        if (isAvailable(ta, shuffled_courses[j])) {
                             pushBack(availableTA, ta);
                         }
                     }
 
-
+                    //For each lab try to assign a TA
                     for (int l = 0; l < shuffled_courses[j]->subject->required_labs; ++l) {
                         if (availableTA->size == 0) {
                             break;
@@ -581,26 +620,31 @@ void solve() {
             }
             // Random population created
 
+            //Sort all individuals by badness
             qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
 
             for (int step = 0; step < EVOLUTION_STEPS; ++step) {
+                // At each evolution step we should create new population, based on good individual of the current one
                 Individual *new_population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
 
+                //Some percentage of best individuals go to the next generation directly
                 for (int i = 0; i < BEST_COUNT; ++i) {
                     memcpy(&(new_population[i]), &(population[i]), sizeof(Individual));
                 }
 
-                //Do reproduction with CROSSING_PARENTS_COUNT
+                //Other part of population must be reproducted from CROSSING_PARENTS_COUNT best individuals
 
                 for (int child_no = 0; child_no < POPULATION_SIZE - BEST_COUNT; ++child_no) {
                     Individual first_parent = population[rand() % CROSSING_PARENTS_COUNT];
                     Individual second_parent = population[rand() % CROSSING_PARENTS_COUNT];
 
+                    // Maps TA's Fullname -> object into child
                     HashTable *TAbyName = malloc(sizeof(HashTable));
-                    hash_table_init(TAbyName, 5, MAX_ENTRY_SIZE, sizeof(TAGenetic *), cmpStr);
+                    hash_table_init(TAbyName, 5, MAX_ENTRY_SIZE, cmpStr);
 
+                    // Maps Professor's Fullname -> object into child
                     HashTable *ProfbyName = malloc(sizeof(HashTable));
-                    hash_table_init(ProfbyName, 5, MAX_ENTRY_SIZE, sizeof(ProfessorGenetic *), cmpStr);
+                    hash_table_init(ProfbyName, 5, MAX_ENTRY_SIZE, cmpStr);
 
                     Individual *child = malloc(sizeof(Individual));
 
@@ -616,9 +660,9 @@ void solve() {
                     child->allprofs = malloc(sizeof(List));
                     initList(child->allprofs);
 
-                    CourseGenetic *newGenome = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
+                    CourseGenetic *childSchedule = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
                     for (int j = 0; j < subjects_count; ++j) {
-                        new_CourseGenetic(&(newGenome[j]), (Subject *) getFromList(subjects, j));
+                        new_CourseGenetic(&(childSchedule[j]), (Subject *) getFromList(subjects, j));
                     }
 
                     for (int j = 0; j < tas_count; ++j) {
@@ -639,11 +683,11 @@ void solve() {
                         insert(ProfbyName, new->professor->fullname, new);
                     }
 
+                    child->schedule = childSchedule;
 
-                    child->schedule = newGenome;
-
+                    // after 2 parents was chosen and child was initialized, the crossing process starts
                     for (int i = 0; i < subjects_count; ++i) {
-                        CourseGenetic *course = &(newGenome[i]);
+                        CourseGenetic *course = &(childSchedule[i]);
 
                         List *sourceAssistants = first_parent.schedule[i].TAs;
 
@@ -660,8 +704,7 @@ void solve() {
                         }
 
                         for (int j = 0; j < course->subject->required_labs; ++j) {
-                            //find try to find an available ta from the first parent
-
+                            // try to find an available ta from the first parent
 
                             if (availableAssistants->size != 0) {
                                 int randomInd = rand() % availableAssistants->size;
@@ -756,14 +799,14 @@ void solve() {
 
                                 AssignTo(childProf, course);
 
-                                if (childProf->isBusy == True) {
+                                if (childProf->isBusy) {
                                     removeFromList(child->professors, randomInd);
                                     remove_el(ProfbyName, childProf->professor->fullname);
                                 }
 
                             } else {
                                 AssignTo(childProf, course);
-                                if (childProf->isBusy == True) {
+                                if (childProf->isBusy) {
                                     removeByKey(child->professors, childProf, (int (*)(void *, void *)) cmpProf);
                                     remove_el(ProfbyName, childProf->professor->fullname);
                                 }
@@ -809,10 +852,6 @@ void solve() {
 
                 population = new_population;
                 qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
-
-//                printf("%d) best - %d\n", step, population[0].error);
-//                printf("%d) %d %d %d %d %d\n", step, population[0].error, population[249].error, population[499].error,
-//                       population[749].error, population[999].error);
 
                 if (population[0].error == current_result) {
                     ++steps_without_improvement;
@@ -867,8 +906,6 @@ void solve() {
             free(population);
 //population free end
 
-
-
             freeList(subjects, (void (*)(void *)) del_subject);
             freeList(profs, (void (*)(void *)) del_faculty);
             freeList(tas, (void (*)(void *)) del_faculty);
@@ -876,14 +913,24 @@ void solve() {
 
             freeAll(4, subjects, profs, tas, students);
         } else {
-//             TODO доделай поведение, если одного файла не существует
-            break;
+            printf("Invalid input.");
         }
     }
 
 }
 
 int parseInput(List *subjects, List *profs, List *TAs, List *students) {
+
+    //get last symbol of the file. If it is a newline - immediately break
+    char last_char;
+    fseek(stdin, -1, SEEK_END);
+    scanf("%c", &last_char);
+    if (last_char == *"\n")
+        return 111;
+    fseek(stdin, SEEK_SET, 0);
+
+
+
     //reading subjects, until "P" is met
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1 && strcmp(global_buffer, "P\n") != 0) {
 
@@ -922,10 +969,10 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         students_allowed = nums[1];
         // if information about course contains negative numbers (it must be handled above, but for any case)
         // or zeroes
-        if (labs_required <= 0 || students_allowed <= 0) {
-            free(course_name);
-            return 35;
-        }
+//        if (labs_required <= 0 || students_allowed <= 0) {
+//            free(course_name);
+//            return 35;
+//        }
 
         //If some course was introduced twice
         if (get_el(subjectByName, course_name) != NULL) {
@@ -950,7 +997,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1) {
         // Performs changing of group of people Profs -> TAs
-        if (strcmp(global_buffer, "T\n") == 0) {
+        trim();
+        if (strcmp(global_buffer, TA_DELIMITER) == 0) {
             if (status == PROFESSOR) {
                 status = TA;
                 continue;
@@ -959,7 +1007,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             }
         }
         // TAs -> Students
-        if (strcmp(global_buffer, "S\n") == 0) {
+        if (strcmp(global_buffer, STUDENT_DELIMITER) == 0) {
             if (status == TA) {
                 status = STUDENT;
                 continue;
@@ -967,10 +1015,14 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                 return 42;
             }
         }
-        trim();
+
+        //If before the newline/EOF character there is a non-letter symbol - input is incorrect
+        if (!isalpha(global_buffer[strlen(global_buffer) - 1])) {
+            return 39;
+        }
+
         // tokenize given string by spaces
         // the format is always like {fullname} {surname} <{ID}> {List of subjects}
-//        char *token = strtok(global_buffer, " ");
         char *token = strtok_single(global_buffer, " ");
         if (!isValid(token)) {
             return 43;
@@ -992,6 +1044,29 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
         char *fullname = (char *) malloc((2 + strlen(name) + strlen(surname)) * sizeof(char));
         getFullName(fullname, name, surname);
+        if (!checkName(fullname)) {
+            freeAll(3, name, surname, fullname);
+            return 446;
+        }
+        switch (status){
+            case PROFESSOR:{
+                if (get_el(professorPresence, fullname) != NULL){
+                    freeAll(3, name, surname, fullname);
+                    return 447;
+                }
+
+                break;
+            }
+
+            case TA:{
+                if (get_el(TAPresence, fullname)!=NULL){
+                    freeAll(3, name, surname, fullname);
+                    return 448;
+                }
+            }
+
+            default:{}
+        }
 
         List *head = malloc(sizeof(List));
         initList(head);
@@ -1000,12 +1075,19 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
         char *student_id;
         if (status == STUDENT) {
+
+            if (!checkID(token)) {
+                freeList(head, NULL);
+                freeAll(4, name, surname, fullname, head);
+                return 447;
+            }
+
             student_id = malloc(strlen(token) + 1);
             strcpy(student_id, token);
             token = strtok_single(NULL, " ");
             if (!isValid(token)) {
                 freeList(head, NULL);
-                freeAll(4, name, surname, fullname, head);
+                freeAll(5, name, surname, fullname, head, student_id);
                 return 46;
             }
         }
@@ -1015,6 +1097,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             if (!isValid(token)) {
                 freeList(head, NULL);
                 freeAll(4, name, surname, fullname, head);
+                if (status == STUDENT) free(student_id);
                 return 47;
             }
             char *tmp = malloc(strlen(token) + 1);
@@ -1026,6 +1109,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             if (subj == NULL) {
                 freeList(head, NULL);
                 freeAll(4, name, surname, fullname, head);
+                if (status == STUDENT) free(student_id);
                 return 48; // Found a coursename that doesn't exists
             }
 
@@ -1061,11 +1145,13 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             case PROFESSOR: {
                 pushBack(profs, n);
                 ++profs_count;
+                insert(professorPresence,fullname, n);
                 break;
             }
             case TA: {
                 pushBack(TAs, n);
                 ++tas_count;
+                insert(TAPresence, fullname, n);
                 break;
             }
             case STUDENT: {
@@ -1077,14 +1163,12 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
 
         freeAll(3, name, surname, token);
-        if (status == STUDENT) {
-            free(student_id);
-        }
+        if (status == STUDENT) free(student_id);
 
     }
 
     //
-    if (status != STUDENT || students_count == 0)
+    if (status != STUDENT )
         return 50;
 
     return 0;
@@ -1186,7 +1270,7 @@ char /*Bool*/ checkID(char *id) {
 char /*Bool*/ checkName(char *name) {
     if (name != NULL) {
         for (int i = 0; i < strlen(name); ++i) {
-            if (isalpha(name[i]) == 0) {
+            if (isalpha(name[i]) == 0 && name[i] != ' ') {
                 return False;
             }
         }
@@ -1316,11 +1400,7 @@ Node *getNodeFromList(List *list, int ind) {
 
 void *getFromList(List *list, int ind) {
     Node *res = getNodeFromList(list, ind);
-    if (res != NULL) {
-        return res->data;
-    } else {
-        return NULL;
-    }
+    return (res != NULL) ? res->data : NULL;
 }
 
 void printStringPair(void *s) {
@@ -1412,18 +1492,15 @@ char /*Bool*/ isInList(List *list, void *data, int (*key_cmp)(void *, void *)) {
 }
 
 ///Hash Map///
-
+//Source: http://www.cse.yorku.ca/~oz/hash.html
 ull hash(const void *data, size_t size) {
+    ull result = 5381;
     char *i = (char *) data;
-    ull result = 0;
-    ull mult = 1;
-    for (int j = 0; j < size; j++, i++) {
-        if (*i == '\0') // now map works only for string keys
-            break;
-        result += mult * (*i);
-        result %= ULLONG_MAX; // just in case of overflow
-        mult *= z;
-    }
+    int c;
+
+    while ((c = *i++))
+        result = ((result << 5U) + result) + c;
+
     return result;
 }
 
@@ -1435,9 +1512,8 @@ void free_hash_entry(HashNode *node) {
 
 
 void
-hash_table_init(HashTable *table, size_t capacity, size_t key_size, size_t value_size, int (*key_cmp)(void *, void *)) {
+hash_table_init(HashTable *table, size_t capacity, size_t key_size, int (*key_cmp)(void *, void *)) {
     table->key_size = key_size;
-    table->value_size = value_size;
     table->capacity = capacity;
     table->datalist = (HashList *) malloc(capacity * sizeof(HashList));
     table->key_comparator = key_cmp;
@@ -1511,7 +1587,7 @@ void free_hash_table(HashTable *table) {
 void rehash(HashTable *table) {
     HashList *old = table->datalist;
     HashTable *temp = malloc(sizeof(HashTable));
-    hash_table_init(temp, 2 * table->capacity, table->key_size, table->value_size, table->key_comparator);
+    hash_table_init(temp, 2 * table->capacity, table->key_size, table->key_comparator);
 
     for (int i = 0; i < table->capacity; ++i) {
         HashNode *list = old[i].head;
@@ -1664,7 +1740,7 @@ char /*Bool*/ isAvailableProf(ProfessorGenetic *prof, CourseGenetic *course) {
 
     if (prof->courses_teaching->size == 1) {
         return !prof->isDoingWrongSubject &&
-               isInList(prof->professor->trained_for, course->subject->name, cmpStr) == True;
+               isInList(prof->professor->trained_for, course->subject->name, cmpStr);
     }
 
     return False;
@@ -1679,7 +1755,7 @@ void AssignToProf(ProfessorGenetic *prof, CourseGenetic *course) {
 
     course->prof = prof;
 
-    if (prof->isDoingWrongSubject == True || prof->courses_teaching->size == 2) {
+    if (prof->isDoingWrongSubject || prof->courses_teaching->size == PROFESSOR_MAX_TRAINED_COURSES_TEACHING) {
         prof->isBusy = True;
     }
 }
@@ -1717,8 +1793,7 @@ int errorProf(ProfessorGenetic *prof, char/*Bool*/ print) {
 
 ///TAGenetic///
 char /*Bool*/ isAvailableTA(TAGenetic *ta, CourseGenetic *course) {
-    return (ta->courses_teaching->size < TA_MAX_CLASS && isInList(ta->TA->trained_for, course->subject->name, cmpStr)) ?
-           True : False;
+    return ta->courses_teaching->size < TA_MAX_CLASS && isInList(ta->TA->trained_for, course->subject->name, cmpStr);
 }
 
 void AssignToTA(TAGenetic *ta, CourseGenetic *course) {
