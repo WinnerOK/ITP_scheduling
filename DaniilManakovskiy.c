@@ -75,6 +75,11 @@ char *sep = " "; // separator between first and last names
 
 
 /////////////////////////////////Data structures/////////////////////////////////
+typedef struct hashedString{
+    char* str;
+    ull hash;
+}HashedString;
+
 typedef struct stringPair {
     char *fullname;
     char *id;
@@ -124,7 +129,7 @@ void removeByKey(List *list, void *key, int (*cmp)(void *, void *));
 
 ///Hash Map///
 typedef struct hash_node {
-    void *key;
+    char *key;
     void *value;
     struct hash_node *next;
     struct hash_node *prev;
@@ -138,7 +143,6 @@ typedef struct {
 typedef struct {
     HashList *datalist;
     size_t size, capacity;
-    size_t key_size;
 
     int (*key_comparator)(void *, void *);
     /* 1: key1 > key2
@@ -147,13 +151,13 @@ typedef struct {
      */
 } HashTable;
 
-ull hash(const void *data, size_t size);
+ull hash(const void *data);
 
 void free_hash_entry(HashNode *node);
 
 void init_datalist(HashList *datalist, size_t capacity);
 
-void hash_table_init(HashTable *table, size_t capacity, size_t key_size,
+void hash_table_init(HashTable *table, size_t capacity,
                      int (*key_cmp)(void *, void *));
 
 void insert(HashTable *table, char *key, void *value);
@@ -162,12 +166,12 @@ void free_hash_table(HashTable *table);
 
 void rehash(HashTable *table);
 
-void *get_el(HashTable *table, void *key);
+void *get_el(HashTable *table, char *key);
 
-void remove_el(HashTable *table, void *key);
+void remove_el(HashTable *table, char *key);
 
 //WARNING! Returns a pointer to actual node in table
-HashNode *find_node(HashTable *table, void *key);
+HashNode *find_node(HashTable *table, char *key);
 
 
 /////////////////////////////////Data structures/////////////////////////////////
@@ -484,13 +488,13 @@ void solve(int max_test) {
 
 
             subjectByName = (HashTable *) malloc(sizeof(HashTable));
-            hash_table_init(subjectByName, 5, MAX_ENTRY_SIZE, cmpStr);
+            hash_table_init(subjectByName, 5, cmpStr);
 
             professorPresence = (HashTable *) malloc(sizeof(HashTable));
-            hash_table_init(professorPresence, 5, MAX_ENTRY_SIZE, cmpStr);
+            hash_table_init(professorPresence, 5, cmpStr);
 
             TAPresence = (HashTable *) malloc(sizeof(HashTable));
-            hash_table_init(TAPresence, 5, MAX_ENTRY_SIZE, cmpStr);
+            hash_table_init(TAPresence, 5, cmpStr);
 
 
             if (parseInput(subjects, profs, tas, students) != 0) {
@@ -637,11 +641,11 @@ void solve(int max_test) {
 
                     // Maps TA's Fullname -> object into child
                     HashTable *TAbyName = malloc(sizeof(HashTable));
-                    hash_table_init(TAbyName, (int)(tas_count*1.5), MAX_ENTRY_SIZE, cmpStr);
+                    hash_table_init(TAbyName, (int)(tas_count*1.5), cmpStr);
 
                     // Maps Professor's Fullname -> object into child
                     HashTable *ProfbyName = malloc(sizeof(HashTable));
-                    hash_table_init(ProfbyName, (int)(profs_count*1.5), MAX_ENTRY_SIZE, cmpStr);
+                    hash_table_init(ProfbyName, (int)(profs_count*1.5), cmpStr);
 
                     Individual *child = malloc(sizeof(Individual));
 
@@ -1490,7 +1494,7 @@ char /*Bool*/ isInList(List *list, void *data, int (*key_cmp)(void *, void *)) {
 
 ///Hash Map///
 //Source: http://www.cse.yorku.ca/~oz/hash.html
-ull hash(const void *data, size_t size) {
+ull hash(const void *data) {
     ull result = 5381;
     char *i = (char *) data;
     int c;
@@ -1509,8 +1513,7 @@ void free_hash_entry(HashNode *node) {
 
 
 void
-hash_table_init(HashTable *table, size_t capacity, size_t key_size, int (*key_cmp)(void *, void *)) {
-    table->key_size = key_size;
+hash_table_init(HashTable *table, size_t capacity, int (*key_cmp)(void *, void *)) {
     table->capacity = capacity;
     table->datalist = (HashList *) malloc(capacity * sizeof(HashList));
     table->key_comparator = key_cmp;
@@ -1519,7 +1522,7 @@ hash_table_init(HashTable *table, size_t capacity, size_t key_size, int (*key_cm
 }
 
 void insert(HashTable *table, char *key, void *value) {
-    ull index = hash(key, table->key_size) % table->capacity;
+    ull index = hash(key) % table->capacity;
 
     HashNode *node = (table->datalist[index]).head;
 
@@ -1527,8 +1530,7 @@ void insert(HashTable *table, char *key, void *value) {
 
     item->next = NULL;
     item->prev = NULL;
-    item->key = malloc(table->key_size);
-    strcpy(item->key, key);
+    item->key = strdup(key);
     item->value = value;
 
     if (node == NULL) {
@@ -1585,7 +1587,7 @@ void rehash(HashTable *table) {
 //    fprintf(stderr, "REHASH!\n");
     HashList *old = table->datalist;
     HashTable *temp = malloc(sizeof(HashTable));
-    hash_table_init(temp, 2 * table->capacity, table->key_size, table->key_comparator);
+    hash_table_init(temp, 2 * table->capacity, table->key_comparator);
 
     HashNode *list = NULL;
     HashNode* next = NULL;
@@ -1616,8 +1618,8 @@ void init_datalist(HashList *datalist, size_t capacity) {
 }
 
 //WARNING! Returns a pointer to actual node in table
-HashNode *find_node(HashTable *table, void *key) {
-    HashNode *node = table->datalist[hash(key, table->key_size) % table->capacity].head;
+HashNode *find_node(HashTable *table, char *key) {
+    HashNode *node = table->datalist[hash(key) % table->capacity].head;
     while (node != NULL) {
         if (table->key_comparator(key, node->key) == 0) {
             return node;
@@ -1627,15 +1629,15 @@ HashNode *find_node(HashTable *table, void *key) {
     return NULL;
 }
 
-void *get_el(HashTable *table, void *key) {
+void *get_el(HashTable *table, char *key) {
     HashNode *tmp = find_node(table, key);
     return (tmp != NULL) ? tmp->value : NULL;
 }
 
-void remove_el(HashTable *table, void *key) {
+void remove_el(HashTable *table, char *key) {
     HashNode *tmp = find_node(table, key);
     if (tmp != NULL) {
-        size_t index = hash(key, table->key_size) % table->capacity;
+        size_t index = hash(key) % table->capacity;
         if (tmp->next != NULL && tmp->prev != NULL) {
             tmp->prev->next = tmp->next;
             tmp->next->prev = tmp->prev;
