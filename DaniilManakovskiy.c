@@ -390,6 +390,7 @@ void getFullName(char *fullname, char *first_name, char *last_name) {
 
 // Free all n pointers
 void freeAll(int n, ...) {
+
     va_list ptrs;
     va_start(ptrs, n);
 
@@ -417,7 +418,6 @@ void introduce() {
 }
 
 int main() {
-
 //    introduce();
 
     srand((unsigned int) time(NULL));
@@ -453,6 +453,7 @@ void solve(int max_test) {
     char inputFile[FILENAME_SIZE];
     char outputFile[FILENAME_SIZE];
     for (int test = 1; test <= max_test; ++test) {
+
         //writes to the buffer filename of the current input file
         snprintf(inputFile, FILENAME_SIZE, "input%d.txt", test);
         snprintf(outputFile, FILENAME_SIZE, "DaniilManakovskiyOutput%d.txt", test);
@@ -507,6 +508,7 @@ void solve(int max_test) {
                 freeList(students, (void (*)(void *)) del_student);
                 free_hash_table(TAPresence);
                 free_hash_table(professorPresence);
+                free_hash_table(subjectByName);
                 continue;
             }
 
@@ -1018,6 +1020,12 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         }
 
         char *name = strdup(token);
+        if (checkName(name) == False){
+            free(name);
+            return 443;
+        }
+
+
         token = strtok_single(NULL, " ");
         if (!isValid(token)) {
             free(name);
@@ -1025,6 +1033,11 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         }
 
         char *surname = strdup(token);
+        if (checkName(surname)==False){
+            freeAll(2, name, surname);
+            return 445;
+        }
+
         token = strtok_single(NULL, " ");
         if (!isValid(token)) {
             freeAll(2, name, surname);
@@ -1033,10 +1046,6 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
         char *fullname = (char *) malloc((2 + strlen(name) + strlen(surname)) * sizeof(char));
         getFullName(fullname, name, surname);
-        if (!checkName(fullname)) {
-            freeAll(3, name, surname, fullname);
-            return 446;
-        }
         switch (input_status) {
             case PROFESSOR: {
                 if (get_el(professorPresence, fullname) != NULL) {
@@ -1096,7 +1105,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             if (!isValid(token)) {
                 freeList(head, NULL);
                 freeAll(3, name, surname, fullname);
-                if (input_status == STUDENT) free(student_id);
+                if (input_status == STUDENT)
+                    free(student_id);
                 return 47;
             }
             if (input_status != STUDENT) {
@@ -1110,7 +1120,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             if (subj == NULL) {
                 freeList(head, NULL);
                 freeAll(3, name, surname, fullname);
-                if (input_status == STUDENT) free(student_id);
+                if (input_status == STUDENT)
+                    free(student_id);
                 return 48; // Found a course_name that doesn't exists
             }
 
@@ -1150,14 +1161,16 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         }
 
         new_entity = NULL;
-        freeAll(3, name, surname, token);
+        freeAll(4, name, surname, token, fullname);
         if (input_status == STUDENT) free(student_id);
 
     }
 
     //
-    if (input_status != STUDENT)
+    if (input_status != STUDENT) {
+
         return 50;
+    }
 
     return 0;
 }
@@ -1444,19 +1457,21 @@ void printList(List *list, int n, void (*print_function)(void *)) {
 }
 
 void freeList(List *list, void (*destructor)(void *)) {
-    Node *node = list->head;
-    Node *next;
-    while (node != NULL) {
-        next = node->next;
-        if (destructor != NULL)
-            destructor(node->data);
-        free(node->data);
-        node->prev = NULL;
-        node->next = NULL;
-        free(node);
-        node = next;
+    if (list != NULL) {
+        Node *node = list->head;
+        Node *next;
+        while (node != NULL) {
+            next = node->next;
+            if (destructor != NULL)
+                destructor(node->data);
+            free(node->data);
+            node->prev = NULL;
+            node->next = NULL;
+            free(node);
+            node = next;
+        }
+        free(list);
     }
-    free(list);
 }
 
 void freeListSaveData(List *list) {
@@ -1663,14 +1678,15 @@ void new_subject(Subject *new, char *name, int labs, int students) {
 void new_faculty(Faculty *new, char *fullname) {
     if (new == NULL)
         return;
-    new->fullname = fullname;
+    new->fullname = strdup(fullname);
     new->hash = hash(fullname);
+    new->trained_for = NULL;
 }
 
 void new_student(Student *new, char *fullname, char *ID) {
     if (new == NULL)
         return;
-    new->name = fullname;
+    new->name = strdup(fullname);
     new->ID = malloc(ID_SIZE + 1); // ID_SIZE chars + \0
     strcpy(new->ID, ID);
     new->lacking_courses = malloc(sizeof(List));
@@ -1707,13 +1723,17 @@ void del_subject(Subject *subj) {
 }
 
 void del_faculty(Faculty *f) {
-    freeList(f->trained_for, NULL);
-    free(f->fullname);
+    if (f != NULL) {
+        freeList(f->trained_for, NULL);
+        free(f->fullname);
+    }
 }
 
 void del_student(Student *s) {
-    freeListSaveData(s->lacking_courses);
-    freeAll(2, s->name, s->ID);
+    if (s != NULL){
+        freeListSaveData(s->lacking_courses);
+        freeAll(2, s->name, s->ID);
+    }
 }
 
 void del_Professor_genetic(ProfessorGenetic *prof) {
