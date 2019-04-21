@@ -7,6 +7,26 @@
 #include <ctype.h>
 #include <stdarg.h>
 
+/* A comment regarding one of the last assignment change (21.04.19)
+ * From that moment any duplicates in the list of courses must be considered as invalid input
+ * What is "Invalid input"? I think it is a situation, when you lose some information because it does not correspond
+ * To the input pattern.
+ *
+ * It is not the case in our assignment:
+ * Let consider the pattern for professor
+ * <first_name> <last_name> <list of courses that professors>
+ * each block has its own restrictions (that is why I somehow cannot say anything against changes, but still want
+ * to tell my opinion)
+ *
+ * The list itself, in fact, can be a set, and must be parsed as set. The information, that this list gives is
+ * "Can professor/TA teach the course wihout a fine?" or "Does student want to enroll to the course"?
+ *
+ * And it, in fact, tells such information even if it has not unique elements. Therefore shouldn't be considered
+ * as invalid input.
+ *
+ * I did not want to offend anybody by this message. It is just my opinion about last changes.
+ */
+
 
 /////////////////////////////////Constants, types/////////////////////////////////
 
@@ -1098,11 +1118,22 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                     free(student_id);
                 return 47;
             }
-            if (input_status != STUDENT) {
-                char *tmp = malloc(strlen(token) + 1);
+            if (isInList(head, token, (int (*)(void *, void *)) strcmp) == True){
+                freeList(head, NULL);
+                freeAll(3, name,surname,fullname);
+                if (input_status == STUDENT)
+                    free(student_id);
+                return 447;
+            }
+            char *tmp = malloc(strlen(token) + 1);
                 strcpy(tmp, token);
                 pushBack(head, tmp);
-            }
+
+//            if (input_status != STUDENT) {
+//                char *tmp = malloc(strlen(token) + 1);
+//                strcpy(tmp, token);
+//                pushBack(head, tmp);
+//            }
             len++;
 
             Subject *subj = get_el(subjectByName, token);
@@ -1141,7 +1172,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                 break;
             }
             case STUDENT: {
-                free(head);
+                freeList(head, NULL);
                 pushBack(students, new_entity);
                 break;
             }
