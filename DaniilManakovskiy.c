@@ -75,10 +75,6 @@ char *sep = " "; // separator between first and last names
 
 
 /////////////////////////////////Data structures/////////////////////////////////
-typedef struct stringPair {
-    char *fullname;
-    char *id;
-} StringPair;
 ///Linked List///
 typedef struct node {
     void *data;
@@ -106,7 +102,7 @@ void freeListSaveData(List *list);
 
 // functions for different representation of void* in list nodes
 
-void printStringPair(void *s);
+void printStudent(void *s);
 
 void printTAGenetic(void *taG);
 
@@ -171,7 +167,7 @@ HashNode *find_node(HashTable *table, char *key);
 
 /////////////////////////////////Data structures/////////////////////////////////
 typedef enum Status {
-    PROFESSOR, TA, STUDENT
+    COURSE, PROFESSOR, TA, STUDENT
 } status;
 
 ///BASIC DATA STRUCTURES///
@@ -194,7 +190,7 @@ typedef struct faculty {
 typedef struct student {
     char *name;
     char *ID;
-    List *required_courses;
+    List *lacking_courses;
 } Student;
 
 
@@ -243,8 +239,6 @@ void new_CourseGenetic(CourseGenetic *new, Subject *subject);
 
 
 ///Destructors//
-void delStringPair(StringPair *str);
-
 void del_subject(Subject *subj);
 
 void del_faculty(Faculty *f);
@@ -322,13 +316,15 @@ char *strtok_single(char *str, char const *delims);
 
 /////////////////////////////////Global variables/////////////////////////////////
 char *global_buffer;
+void *new_entity = NULL;
 HashTable *subjectByName = NULL;
 HashTable *professorPresence = NULL;
 HashTable *TAPresence = NULL;
-int subjects_count;
-int profs_count;
-int tas_count;
-int students_count;
+List *subjects = NULL;
+List *profs = NULL;
+List *tas = NULL;
+List *students = NULL;
+int input_status;
 
 /////////////////////////////////Util functions/////////////////////////////////
 char /*Bool*/ isValid(const char *token) {
@@ -361,7 +357,7 @@ void swap(void **pa, void **pb) {
 }
 
 CourseGenetic **shuffle(CourseGenetic *arr, int n) {
-    CourseGenetic **result = (CourseGenetic **) malloc(subjects_count * sizeof(CourseGenetic *));
+    CourseGenetic **result = (CourseGenetic **) malloc(subjects->size * sizeof(CourseGenetic *));
 
     for (int k = 0; k < n; ++k) {
         result[k] = &(arr[k]);
@@ -461,22 +457,16 @@ void solve(int max_test) {
             int steps_without_improvement = 0;
 
             //solve task for a particular input
-            List *subjects = malloc(sizeof(List));
-            List *profs = malloc(sizeof(List));
-            List *tas = malloc(sizeof(List));
-            List *students = malloc(sizeof(List));
+            subjects = malloc(sizeof(List));
+            profs = malloc(sizeof(List));
+            tas = malloc(sizeof(List));
+            students = malloc(sizeof(List));
 
 
             initList(subjects);
             initList(profs);
             initList(tas);
             initList(students);
-
-            subjects_count = 0;
-            profs_count = 0;
-            tas_count = 0;
-            students_count = 0;
-
 
             subjectByName = (HashTable *) malloc(sizeof(HashTable));
             hash_table_init(subjectByName, 5, cmpStr);
@@ -490,6 +480,20 @@ void solve(int max_test) {
 
             if (parseInput(subjects, profs, tas, students) != 0) {
                 printf("Invalid input.");
+                switch (input_status) {
+                    case PROFESSOR:
+                    case TA: {
+                        del_faculty(new_entity);
+                        break;
+                    }
+                    case STUDENT: {
+                        del_student(new_entity);
+                        break;
+                    }
+                    default: {
+                    }
+                }
+                free(new_entity);
                 freeList(subjects, (void (*)(void *)) del_subject);
                 freeList(profs, (void (*)(void *)) del_faculty);
                 freeList(tas, (void (*)(void *)) del_faculty);
@@ -522,7 +526,7 @@ void solve(int max_test) {
                 List *taPool = malloc(sizeof(List));
                 initList(taPool);
 
-                for (int j = 0; j < profs_count; ++j) {
+                for (int j = 0; j < profs->size; ++j) {
                     ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
                     new_professorGenetic(new, (Faculty *) getFromList(profs, j));
                     pushBack(profPool, new);
@@ -530,23 +534,23 @@ void solve(int max_test) {
                 }
 
 
-                for (int j = 0; j < tas_count; ++j) {
+                for (int j = 0; j < tas->size; ++j) {
                     TAGenetic *new = malloc(sizeof(TAGenetic));
                     new_TAGenetic(new, (Faculty *) getFromList(tas, j));
                     pushBack(allTA, new);
                     pushBack(taPool, new);
                 }
 
-                CourseGenetic *courses = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
-                for (int j = 0; j < subjects_count; ++j) {
+                CourseGenetic *courses = (CourseGenetic *) malloc(subjects->size * sizeof(CourseGenetic));
+                for (int j = 0; j < subjects->size; ++j) {
                     new_CourseGenetic(&(courses[j]), (Subject *) getFromList(subjects, j));
                 }
 
                 /* since all individuals have the same order of courses in schedule, we have to shuffle all courses to
                  * add some randomness into professor/ta distribution
                  */
-                CourseGenetic **shuffled_courses = shuffle(courses, subjects_count);
-                for (int j = 0; j < subjects_count; ++j) {
+                CourseGenetic **shuffled_courses = shuffle(courses, subjects->size);
+                for (int j = 0; j < subjects->size; ++j) {
                     // if there is any available prof, try assign him/her to the course
                     if (profPool->size == 0) {
                         break;
@@ -567,7 +571,7 @@ void solve(int max_test) {
                 }
 
                 // All professors assigned, perform the same assignment for TAs
-                for (int j = 0; j < subjects_count; ++j) {
+                for (int j = 0; j < subjects->size; ++j) {
                     //Construct a list of TAs that now can teach current course
                     List *availableTA = malloc(sizeof(List));
                     initList(availableTA);
@@ -629,11 +633,11 @@ void solve(int max_test) {
 
                     // Maps TA's Fullname -> object into child
                     HashTable *TAbyName = malloc(sizeof(HashTable));
-                    hash_table_init(TAbyName, (int) (tas_count * 1.5), cmpStr);
+                    hash_table_init(TAbyName, (int) (tas->size * 1.5), cmpStr);
 
                     // Maps Professor's Fullname -> object into child
                     HashTable *ProfbyName = malloc(sizeof(HashTable));
-                    hash_table_init(ProfbyName, (int) (profs_count * 1.5), cmpStr);
+                    hash_table_init(ProfbyName, (int) (profs->size * 1.5), cmpStr);
 
                     Individual *child = malloc(sizeof(Individual));
 
@@ -649,12 +653,12 @@ void solve(int max_test) {
                     child->allprofs = malloc(sizeof(List));
                     initList(child->allprofs);
 
-                    CourseGenetic *childSchedule = (CourseGenetic *) malloc(subjects_count * sizeof(CourseGenetic));
-                    for (int j = 0; j < subjects_count; ++j) {
+                    CourseGenetic *childSchedule = (CourseGenetic *) malloc(subjects->size * sizeof(CourseGenetic));
+                    for (int j = 0; j < subjects->size; ++j) {
                         new_CourseGenetic(&(childSchedule[j]), (Subject *) getFromList(subjects, j));
                     }
 
-                    for (int j = 0; j < tas_count; ++j) {
+                    for (int j = 0; j < tas->size; ++j) {
                         TAGenetic *new = malloc(sizeof(TAGenetic));
                         new_TAGenetic(new, (Faculty *) getFromList(tas, j));
                         pushBack(child->allTAs, new);
@@ -662,7 +666,7 @@ void solve(int max_test) {
                         insert(TAbyName, new->TA->fullname, new);
                     }
 
-                    for (int j = 0; j < profs_count; ++j) {
+                    for (int j = 0; j < profs->size; ++j) {
                         ProfessorGenetic *new = malloc(sizeof(ProfessorGenetic));
 
                         new_professorGenetic(new, (Faculty *) getFromList(profs, j));
@@ -675,7 +679,7 @@ void solve(int max_test) {
                     child->schedule = childSchedule;
 
                     // after 2 parents was chosen and child was initialized, the crossing process starts
-                    for (int i = 0; i < subjects_count; ++i) {
+                    for (int i = 0; i < subjects->size; ++i) {
                         CourseGenetic *course = &(childSchedule[i]);
 
                         List *sourceAssistants = first_parent.schedule[i].TAs;
@@ -824,7 +828,7 @@ void solve(int max_test) {
                     freeList(population[l].allprofs, (void (*)(void *)) del_Professor_genetic);
                     freeList(population[l].allTAs, (void (*)(void *)) del_TA_genetic);
 
-                    for (int i = 0; i < subjects_count; ++i) {
+                    for (int i = 0; i < subjects->size; ++i) {
                         freeListSaveData(population[l].schedule[i].TAs);
                     }
                     free(population[l].schedule);
@@ -847,7 +851,7 @@ void solve(int max_test) {
                     break;
                 }
             }
-            for (int subj = 0; subj < subjects_count; ++subj) {
+            for (int subj = 0; subj < subjects->size; ++subj) {
                 if (willRun(&(population[0].schedule[subj]))) {
                     printf("%s\n%s\n",
                            population[0].schedule[subj].subject->name,
@@ -856,7 +860,7 @@ void solve(int max_test) {
                     printList(population[0].schedule[subj].TAs, -1, printTAGenetic);
                     printList(population[0].schedule[subj].subject->required_by,
                               population[0].schedule[subj].subject->allowed_students,
-                              printStringPair);
+                              printStudent);
                     printf("\n");
                 }
             }
@@ -873,7 +877,7 @@ void solve(int max_test) {
                 freeList(population[l].allprofs, (void (*)(void *)) del_Professor_genetic);
                 freeList(population[l].allTAs, (void (*)(void *)) del_TA_genetic);
 
-                for (int i = 0; i < subjects_count; ++i) {
+                for (int i = 0; i < subjects->size; ++i) {
                     freeListSaveData(population[l].schedule[i].TAs);
                 }
                 free(population[l].schedule);
@@ -903,7 +907,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
     fseek(stdin, SEEK_SET, 0);
 
 
-
+    input_status = COURSE;
     //reading subjects, until "P" is met
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1 && strcmp(global_buffer, "P\n") != 0) {
 
@@ -942,10 +946,10 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         students_allowed = nums[1];
         // if information about course contains negative numbers (it must be handled above, but for any case)
         // or zeroes
-//        if (labs_required <= 0 || students_allowed <= 0) {
-//            free(course_name);
-//            return 35;
-//        }
+        if (labs_required <= 0 || students_allowed <= 0) {
+            free(course_name);
+            return 35;
+        }
 
         //If some course was introduced twice
         if (get_el(subjectByName, course_name) != NULL) {
@@ -957,7 +961,6 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         new_subject(n, course_name, labs_required, students_allowed);
         pushBack(subjects, n);
         insert(subjectByName, course_name, n);
-        subjects_count++;
         free(course_name);
 
 
@@ -966,14 +969,14 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
     if (strcmp(global_buffer, "P\n") != 0)
         return 40;
 
-    int status = PROFESSOR; // what group is being read
+    input_status = PROFESSOR; // what group is being read
 
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1) {
         // Performs changing of group of people Profs -> TAs
         trim();
         if (strcmp(global_buffer, TA_DELIMITER) == 0) {
-            if (status == PROFESSOR) {
-                status = TA;
+            if (input_status == PROFESSOR) {
+                input_status = TA;
                 continue;
             } else {
                 return 41;
@@ -981,8 +984,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         }
         // TAs -> Students
         if (strcmp(global_buffer, STUDENT_DELIMITER) == 0) {
-            if (status == TA) {
-                status = STUDENT;
+            if (input_status == TA) {
+                input_status = STUDENT;
                 continue;
             } else {
                 return 42;
@@ -1021,13 +1024,12 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             freeAll(3, name, surname, fullname);
             return 446;
         }
-        switch (status) {
+        switch (input_status) {
             case PROFESSOR: {
                 if (get_el(professorPresence, fullname) != NULL) {
                     freeAll(3, name, surname, fullname);
                     return 447;
                 }
-
                 break;
             }
 
@@ -1036,6 +1038,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                     freeAll(3, name, surname, fullname);
                     return 448;
                 }
+                break;
             }
 
             default: {
@@ -1047,8 +1050,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         int len = 0;
 
 
-        char *student_id;
-        if (status == STUDENT) {
+        char *student_id = NULL;
+        if (input_status == STUDENT) {
 
             if (!checkID(token)) {
                 freeList(head, NULL);
@@ -1067,33 +1070,40 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         }
 
 
+        if (input_status == STUDENT) {
+            new_entity = (Student *) malloc(sizeof(Student));
+            new_student(new_entity, fullname, student_id);
+        } else {
+            new_entity = (Faculty *) malloc(sizeof(Faculty));
+            new_faculty(new_entity, fullname);
+        }
+
+
         while (token != NULL) {
             if (!isValid(token)) {
                 freeList(head, NULL);
                 freeAll(3, name, surname, fullname);
-                if (status == STUDENT) free(student_id);
+                if (input_status == STUDENT) free(student_id);
                 return 47;
             }
-            char *tmp = malloc(strlen(token) + 1);
-            strcpy(tmp, token);
-            pushBack(head, tmp);
+            if (input_status != STUDENT) {
+                char *tmp = malloc(strlen(token) + 1);
+                strcpy(tmp, token);
+                pushBack(head, tmp);
+            }
             len++;
 
             Subject *subj = get_el(subjectByName, token);
             if (subj == NULL) {
                 freeList(head, NULL);
                 freeAll(3, name, surname, fullname);
-                if (status == STUDENT) free(student_id);
-                return 48; // Found a coursename that doesn't exists
+                if (input_status == STUDENT) free(student_id);
+                return 48; // Found a course_name that doesn't exists
             }
 
             // if list of required courses for student started
-            if (status == STUDENT) {
-
-                StringPair *stringPair = malloc(sizeof(StringPair));
-                stringPair->fullname = strdup(fullname);
-                stringPair->id = strdup(student_id);
-                pushBack(subj->required_by, stringPair);
+            if (input_status == STUDENT) {
+                pushBack(subj->required_by, new_entity);
                 subj->selectedCount++;
             }
             token = strtok_single(NULL, " ");
@@ -1101,49 +1111,36 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         }
 
 
-        void *n;
-        if (status == STUDENT) {
-            n = (Student *) malloc(sizeof(Student));
-            new_student(n, fullname, student_id);
-            ((Student *) n)->required_courses = head;
-
-
-        } else {
-            n = (Faculty *) malloc(sizeof(Faculty));
-            new_faculty(n, fullname);
-            ((Faculty *) n)->trained_for = head;
-        }
-
-
-        switch (status) {
+        switch (input_status) {
             case PROFESSOR: {
-                pushBack(profs, n);
-                ++profs_count;
-                insert(professorPresence, fullname, n);
+                ((Faculty *) new_entity)->trained_for = head;
+                pushBack(profs, new_entity);
+                insert(professorPresence, fullname, new_entity);
                 break;
             }
             case TA: {
-                pushBack(TAs, n);
-                ++tas_count;
-                insert(TAPresence, fullname, n);
+                ((Faculty *) new_entity)->trained_for = head;
+                pushBack(TAs, new_entity);
+                insert(TAPresence, fullname, new_entity);
                 break;
             }
             case STUDENT: {
-                pushBack(students, n);
-                ++students_count;
+                free(head);
+                pushBack(students, new_entity);
                 break;
             }
-            default:{}
+            default: {
+            }
         }
 
-
+        new_entity = NULL;
         freeAll(3, name, surname, token);
-        if (status == STUDENT) free(student_id);
+        if (input_status == STUDENT) free(student_id);
 
     }
 
     //
-    if (status != STUDENT)
+    if (input_status != STUDENT)
         return 50;
 
     return 0;
@@ -1378,9 +1375,9 @@ void *getFromList(List *list, int ind) {
     return (res != NULL) ? res->data : NULL;
 }
 
-void printStringPair(void *s) {
-    StringPair *str = (StringPair *) (s);
-    printf("%s %s\n", str->fullname, str->id);
+void printStudent(void *s) {
+    Student *st = (Student *) (s);
+    printf("%s %s\n", st->name, st->ID);
 }
 
 void printTAGenetic(void *taG) {
@@ -1657,7 +1654,8 @@ void new_student(Student *new, char *fullname, char *ID) {
     new->name = fullname;
     new->ID = malloc(ID_SIZE + 1); // ID_SIZE chars + \0
     strcpy(new->ID, ID);
-
+    new->lacking_courses = malloc(sizeof(List));
+    initList(new->lacking_courses);
 }
 
 void new_professorGenetic(ProfessorGenetic *new, Faculty *prof) {
@@ -1684,13 +1682,9 @@ void new_CourseGenetic(CourseGenetic *new, Subject *subject) {
 
 
 ///Destructors//
-
-void delStringPair(StringPair *str) {
-    freeAll(2, str->id, str->fullname);
-}
-
 void del_subject(Subject *subj) {
-    freeList(subj->required_by, (void (*)(void *)) delStringPair);
+//    freeList(subj->required_by, (void (*)(void *)) del_student); // TODO: check Вроде, студенты отдельно чистятся
+    freeListSaveData(subj->required_by);
     free(subj->name);
 }
 
@@ -1700,7 +1694,7 @@ void del_faculty(Faculty *f) {
 }
 
 void del_student(Student *s) {
-    freeList(s->required_courses, NULL);
+    freeListSaveData(s->lacking_courses);
     freeAll(2, s->name, s->ID);
 }
 
@@ -1802,18 +1796,24 @@ int errorCourse(CourseGenetic *course, char/*Bool*/ print) {
         int lacking_students = course->subject->required_by->size - course->subject->allowed_students;
         if (print && lacking_students > 0) {
             for (int i = course->subject->allowed_students; i < course->subject->required_by->size; ++i) {
-                printf("%s is lacking %s.\n",
-                       ((StringPair *) (getFromList(course->subject->required_by, i)))->fullname,
-                       course->subject->name);
+                Student *student = getFromList(course->subject->required_by, i);
+                pushBack(student->lacking_courses, course);
+
+//                printf("%s is lacking %s.\n",
+//                       ((Student *) (getFromList(course->subject->required_by, i)))->name,
+//                       course->subject->name);
             }
         }
         return (lacking_students > 0) ? lacking_students * STUDENT_LACKING_CLASS : 0;
     } else {
         if (print) {
+            printf("%s cannot be run.\n", course->subject->name);
             for (int i = 0; i < course->subject->required_by->size; ++i) {
-                printf("%s is lacking %s.\n",
-                       ((StringPair *) (getFromList(course->subject->required_by, i)))->fullname,
-                       course->subject->name);
+                Student *student = getFromList(course->subject->required_by, i);
+                pushBack(student->lacking_courses, course);
+//                printf("%s is lacking %s.\n",
+//                       ((Student *) (getFromList(course->subject->required_by, i)))->name,
+//                       course->subject->name);
             }
         }
         return course->subject->required_by->size * STUDENT_LACKING_CLASS + COURSE_NOT_RUN;
@@ -1831,13 +1831,8 @@ int errorIndividual(Individual *individual, char /*Bool*/ print) {
     int subj = 0;
     int prof = 0;
     int ta = 0;
-
-    if (print) {
-        for (int i = 0; i < subjects_count; ++i) {
-            if (!willRun(&(individual->schedule[i]))) {
-                printf("%s cannot be run.\n", individual->schedule[i].subject->name);
-            }
-        }
+    for (int i = 0; i < subjects->size; ++i) {
+        subj += error(&(individual->schedule[i]), print);
     }
 
     for (int i = 0; i < individual->allprofs->size; ++i) {
@@ -1848,9 +1843,16 @@ int errorIndividual(Individual *individual, char /*Bool*/ print) {
         ta += error((TAGenetic *) (getFromList(individual->allTAs, i)), print);
     }
 
-    for (int i = 0; i < subjects_count; ++i) {
-        subj += error(&(individual->schedule[i]), print);
+    if (print) {
+        for (int i = 0; i < students->size; ++i) {
+            Student *student = getFromList(students, i);
+            for (int j = 0; j < student->lacking_courses->size; ++j) {
+                CourseGenetic *lacking = getFromList(student->lacking_courses, j);
+                printf("%s is lacking %s.\n", student->name, lacking->subject->name);
+            }
+        }
     }
+
     overall_error = subj + prof + ta;
     return overall_error;
 }
