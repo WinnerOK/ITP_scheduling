@@ -1,14 +1,3 @@
-/**
- * TODO: validate all input
- * - TA must have exactly 1 trained_for course
- * - Prof has at least 1 trained_for course
- * - Student has at least 1 required course
- *
- *
- * - ПРОВЕРЬ НА ПРОБЕЛЫ В КОНЦЕ СТРОКИ И ПУСТУЮ СТРОКУ В КОНЦЕ - ИХ БЫТЬ НЕ ДОЛЖНО
- */
-
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
