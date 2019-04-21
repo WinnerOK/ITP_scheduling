@@ -47,7 +47,7 @@ char *sep = " "; // separator between first and last names
 #define TAKE_FIRST_PARENT_GENE ((TAKE_SECOND_PARENT_GENE)/2)
 #define BEST_COUNT (int)(POPULATION_SIZE*BEST_FIT_PERCENTAGE)
 #define CROSSING_PARENTS_COUNT (int)(POPULATION_SIZE * GOOD_FIT_PERCENTAGE)
-#define MAX_STEPS_WITHOUT_IMPROVEMENT 100
+#define MAX_STEPS_WITHOUT_IMPROVEMENT 25
 
 ///Error Penalties///
 #define COURSE_NOT_RUN 20
@@ -75,11 +75,6 @@ char *sep = " "; // separator between first and last names
 
 
 /////////////////////////////////Data structures/////////////////////////////////
-typedef struct hashedString{
-    char* str;
-    ull hash;
-}HashedString;
-
 typedef struct stringPair {
     char *fullname;
     char *id;
@@ -336,10 +331,6 @@ int tas_count;
 int students_count;
 
 /////////////////////////////////Util functions/////////////////////////////////
-void freeIfPossible(void *p) {
-    if (p != NULL) free(p);
-}
-
 char /*Bool*/ isValid(const char *token) {
     return token != NULL && (*token) != '\0';
 }
@@ -505,8 +496,6 @@ void solve(int max_test) {
                 freeList(students, (void (*)(void *)) del_student);
                 free_hash_table(TAPresence);
                 free_hash_table(professorPresence);
-
-                freeAll(4, subjects, profs, tas, students);
                 continue;
             }
 
@@ -608,7 +597,6 @@ void solve(int max_test) {
 
                     }
                     freeListSaveData(availableTA);
-                    free(availableTA);
                 }
 
                 population[i].allprofs = allProfs;
@@ -641,11 +629,11 @@ void solve(int max_test) {
 
                     // Maps TA's Fullname -> object into child
                     HashTable *TAbyName = malloc(sizeof(HashTable));
-                    hash_table_init(TAbyName, (int)(tas_count*1.5), cmpStr);
+                    hash_table_init(TAbyName, (int) (tas_count * 1.5), cmpStr);
 
                     // Maps Professor's Fullname -> object into child
                     HashTable *ProfbyName = malloc(sizeof(HashTable));
-                    hash_table_init(ProfbyName, (int)(profs_count*1.5), cmpStr);
+                    hash_table_init(ProfbyName, (int) (profs_count * 1.5), cmpStr);
 
                     Individual *child = malloc(sizeof(Individual));
 
@@ -724,6 +712,7 @@ void solve(int max_test) {
 
                             //try to find an available TA from the second parent
                             freeListSaveData(availableAssistants);
+                            availableAssistants = malloc(sizeof(List));
                             initList(availableAssistants);
                             sourceAssistants = second_parent.schedule[i].TAs;
 
@@ -765,7 +754,6 @@ void solve(int max_test) {
                             }
                         }
                         freeListSaveData(availableAssistants);
-                        free(availableAssistants);
 
                         //TA assigned; Assign professor:
                         double probability = randDouble();
@@ -836,15 +824,8 @@ void solve(int max_test) {
                     freeList(population[l].allprofs, (void (*)(void *)) del_Professor_genetic);
                     freeList(population[l].allTAs, (void (*)(void *)) del_TA_genetic);
 
-                    freeAll(4,
-                            population[l].TAs,
-                            population[l].professors,
-                            population[l].allTAs,
-                            population[l].allprofs);
-
                     for (int i = 0; i < subjects_count; ++i) {
                         freeListSaveData(population[l].schedule[i].TAs);
-                        free(population[l].schedule[i].TAs);
                     }
                     free(population[l].schedule);
                 }
@@ -892,15 +873,8 @@ void solve(int max_test) {
                 freeList(population[l].allprofs, (void (*)(void *)) del_Professor_genetic);
                 freeList(population[l].allTAs, (void (*)(void *)) del_TA_genetic);
 
-                freeAll(4,
-                        population[l].TAs,
-                        population[l].professors,
-                        population[l].allTAs,
-                        population[l].allprofs);
-
                 for (int i = 0; i < subjects_count; ++i) {
                     freeListSaveData(population[l].schedule[i].TAs);
-                    free(population[l].schedule[i].TAs);
                 }
                 free(population[l].schedule);
             }
@@ -911,8 +885,6 @@ void solve(int max_test) {
             freeList(profs, (void (*)(void *)) del_faculty);
             freeList(tas, (void (*)(void *)) del_faculty);
             freeList(students, (void (*)(void *)) del_student);
-
-            freeAll(4, subjects, profs, tas, students);
         } else {
             printf("Invalid input.");
         }
@@ -1049,9 +1021,9 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             freeAll(3, name, surname, fullname);
             return 446;
         }
-        switch (status){
-            case PROFESSOR:{
-                if (get_el(professorPresence, fullname) != NULL){
+        switch (status) {
+            case PROFESSOR: {
+                if (get_el(professorPresence, fullname) != NULL) {
                     freeAll(3, name, surname, fullname);
                     return 447;
                 }
@@ -1059,14 +1031,15 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                 break;
             }
 
-            case TA:{
-                if (get_el(TAPresence, fullname)!=NULL){
+            case TA: {
+                if (get_el(TAPresence, fullname) != NULL) {
                     freeAll(3, name, surname, fullname);
                     return 448;
                 }
             }
 
-            default:{}
+            default: {
+            }
         }
 
         List *head = malloc(sizeof(List));
@@ -1079,7 +1052,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
             if (!checkID(token)) {
                 freeList(head, NULL);
-                freeAll(4, name, surname, fullname, head);
+                freeAll(3, name, surname, fullname);
                 return 447;
             }
 
@@ -1088,7 +1061,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             token = strtok_single(NULL, " ");
             if (!isValid(token)) {
                 freeList(head, NULL);
-                freeAll(5, name, surname, fullname, head, student_id);
+                freeAll(4, name, surname, fullname, student_id);
                 return 46;
             }
         }
@@ -1097,7 +1070,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         while (token != NULL) {
             if (!isValid(token)) {
                 freeList(head, NULL);
-                freeAll(4, name, surname, fullname, head);
+                freeAll(3, name, surname, fullname);
                 if (status == STUDENT) free(student_id);
                 return 47;
             }
@@ -1109,7 +1082,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             Subject *subj = get_el(subjectByName, token);
             if (subj == NULL) {
                 freeList(head, NULL);
-                freeAll(4, name, surname, fullname, head);
+                freeAll(3, name, surname, fullname);
                 if (status == STUDENT) free(student_id);
                 return 48; // Found a coursename that doesn't exists
             }
@@ -1146,7 +1119,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             case PROFESSOR: {
                 pushBack(profs, n);
                 ++profs_count;
-                insert(professorPresence,fullname, n);
+                insert(professorPresence, fullname, n);
                 break;
             }
             case TA: {
@@ -1160,6 +1133,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                 ++students_count;
                 break;
             }
+            default:{}
         }
 
 
@@ -1169,7 +1143,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
     }
 
     //
-    if (status != STUDENT )
+    if (status != STUDENT)
         return 50;
 
     return 0;
@@ -1195,18 +1169,18 @@ int findAllNumbers(char *str, int max_ints, long found_numbers[]) {
         // strtol sets errno to ERANGE in case of overflow
         if (errno == ERANGE) {
             errno = 0;
-            freeIfPossible(cleaner);
+            free(cleaner);
 //            freeIfPossible(p);
             return 1;
         }
         if (i > INT_MAX) {
-            freeIfPossible(cleaner);
+            free(cleaner);
             return 1;
         }
         if (found_number_count > max_ints) {
             // if at some moment it findes more numbers, than
             // expected, terminates
-            freeIfPossible(cleaner);
+            free(cleaner);
             return 1;
         }
 
@@ -1222,18 +1196,18 @@ int findAllNumbers(char *str, int max_ints, long found_numbers[]) {
             // problem cases:
             // there is not a number after 1 delimiter
             if (!isdigit(p[1])) {
-                freeIfPossible(cleaner);
+                free(cleaner);
                 return 1;
             } else {
                 // there is a leading zero
                 if (p[1] == '0' && isdigit(p[2])) {
-                    freeIfPossible(cleaner);
+                    free(cleaner);
                     return 1;
                 }
             }
             // The delimiter must be a space
             if (*p != ' ') {
-                freeIfPossible(cleaner);
+                free(cleaner);
                 return 1;
             }
         }
@@ -1246,10 +1220,10 @@ int findAllNumbers(char *str, int max_ints, long found_numbers[]) {
     // line feed
     // printf("String ended with: |%d|\n", *p);
     if (*p != '\n') {
-        freeIfPossible(cleaner);
+        free(cleaner);
         return 1;
     }
-    freeIfPossible(cleaner);
+    free(cleaner);
     return (found_number_count == max_ints) ? 0 : 1;
 }
 
@@ -1469,6 +1443,7 @@ void freeList(List *list, void (*destructor)(void *)) {
         free(node);
         node = next;
     }
+    free(list);
 }
 
 void freeListSaveData(List *list) {
@@ -1481,6 +1456,7 @@ void freeListSaveData(List *list) {
         free(node);
         node = next;
     }
+    free(list);
 }
 
 char /*Bool*/ isInList(List *list, void *data, int (*key_cmp)(void *, void *)) {
@@ -1507,7 +1483,7 @@ ull hash(const void *data) {
 
 void free_hash_entry(HashNode *node) {
     if (node != NULL) {
-        if (node->key != NULL) free(node->key);
+        free(node->key);
     }
 }
 
@@ -1590,7 +1566,7 @@ void rehash(HashTable *table) {
     hash_table_init(temp, 2 * table->capacity, table->key_comparator);
 
     HashNode *list = NULL;
-    HashNode* next = NULL;
+    HashNode *next = NULL;
 
     for (int i = 0; i < table->capacity; ++i) {
         list = old[i].head;
@@ -1715,27 +1691,25 @@ void delStringPair(StringPair *str) {
 
 void del_subject(Subject *subj) {
     freeList(subj->required_by, (void (*)(void *)) delStringPair);
-    freeAll(2, subj->name, subj->required_by);
+    free(subj->name);
 }
 
 void del_faculty(Faculty *f) {
     freeList(f->trained_for, NULL);
-    freeAll(2, f->fullname, f->trained_for);
+    free(f->fullname);
 }
 
 void del_student(Student *s) {
     freeList(s->required_courses, NULL);
-    freeAll(3, s->name, s->ID, s->required_courses);
+    freeAll(2, s->name, s->ID);
 }
 
 void del_Professor_genetic(ProfessorGenetic *prof) {
     freeListSaveData(prof->courses_teaching);
-    free(prof->courses_teaching);
 }
 
 void del_TA_genetic(TAGenetic *ta) {
     freeListSaveData(ta->courses_teaching);
-    free(ta->courses_teaching);
 }
 
 ///Functions on DT///
