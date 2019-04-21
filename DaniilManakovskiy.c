@@ -184,6 +184,7 @@ typedef struct subject {
 //TA and Prof are both faculty, but TA can be assigned only to those courses that he/she can teach
 typedef struct faculty {
     char *fullname;
+    ull hash;
     List *trained_for; // array for strings - names of courses
 } Faculty;
 
@@ -326,6 +327,8 @@ List *tas = NULL;
 List *students = NULL;
 int input_status;
 
+ull precalculatedHash = -1;
+
 /////////////////////////////////Util functions/////////////////////////////////
 char /*Bool*/ isValid(const char *token) {
     return token != NULL && (*token) != '\0';
@@ -346,6 +349,10 @@ int cmpTA(TAGenetic *t1, TAGenetic *t2) {
 
 int cmpProf(ProfessorGenetic *p1, ProfessorGenetic *p2) {
     return strcmp(p1->professor->fullname, p2->professor->fullname);
+}
+
+int cmpStudents(Student *s1, Student *s2) {
+    return strcmp(s1->name, s2->name) != 0 || strcmp(s1->ID, s2->ID) != 0;
 }
 
 void swap(void **pa, void **pb) {
@@ -505,6 +512,7 @@ void solve(int max_test) {
 
             free_hash_table(TAPresence);
             free_hash_table(professorPresence);
+            free_hash_table(subjectByName);
 
 //            printf("\n------Done with input------\n");
             Individual *population = (Individual *) malloc(POPULATION_SIZE * sizeof(Individual));
@@ -663,6 +671,7 @@ void solve(int max_test) {
                         new_TAGenetic(new, (Faculty *) getFromList(tas, j));
                         pushBack(child->allTAs, new);
                         pushBack(child->TAs, new);
+                        precalculatedHash = new->TA->hash;
                         insert(TAbyName, new->TA->fullname, new);
                     }
 
@@ -673,6 +682,7 @@ void solve(int max_test) {
 
                         pushBack(child->professors, new);
                         pushBack(child->allprofs, new);
+                        precalculatedHash = new->professor->hash;
                         insert(ProfbyName, new->professor->fullname, new);
                     }
 
@@ -688,9 +698,10 @@ void solve(int max_test) {
                         initList(availableAssistants);
 
                         for (int k = 0; k < sourceAssistants->size; ++k) {
+                            TAGenetic *sourceTA = getFromList(sourceAssistants, k);
+                            precalculatedHash = sourceTA->TA->hash;
                             TAGenetic *ta = get_el(TAbyName,
-                                                   ((TAGenetic *) (getFromList(sourceAssistants,
-                                                                               k)))->TA->fullname);
+                                                   sourceTA->TA->fullname);
                             if (ta != NULL && isAvailable(ta, course)) {
                                 pushBack(availableAssistants, ta);
                             }
@@ -721,9 +732,10 @@ void solve(int max_test) {
                             sourceAssistants = second_parent.schedule[i].TAs;
 
                             for (int k = 0; k < sourceAssistants->size; ++k) {
+                                TAGenetic *sourceTA = getFromList(sourceAssistants, k);
+                                precalculatedHash = sourceTA->TA->hash;
                                 TAGenetic *ta = get_el(TAbyName,
-                                                       ((TAGenetic *) (getFromList(sourceAssistants,
-                                                                                   k)))->TA->fullname);
+                                                       sourceTA->TA->fullname);
                                 if (ta != NULL && isAvailable(ta, course)) {
                                     pushBack(availableAssistants, ta);
                                 }
@@ -784,6 +796,7 @@ void solve(int max_test) {
                         if (parentProf == NULL) {
                             continue;
                         } else {
+                            precalculatedHash = parentProf->professor->hash;
                             ProfessorGenetic *childProf = get_el(ProfbyName, parentProf->professor->fullname);
                             if (childProf == NULL) {
                                 if (child->professors->size == 0) continue;
@@ -1103,7 +1116,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
             // if list of required courses for student started
             if (input_status == STUDENT) {
-                pushBack(subj->required_by, new_entity);
+                if (!isInList(subj->required_by, new_entity, (int (*)(void *, void *)) cmpStudents))
+                    pushBack(subj->required_by, new_entity);
                 subj->selectedCount++;
             }
             token = strtok_single(NULL, " ");
@@ -1115,12 +1129,14 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             case PROFESSOR: {
                 ((Faculty *) new_entity)->trained_for = head;
                 pushBack(profs, new_entity);
+                precalculatedHash = ((Faculty *) new_entity)->hash;
                 insert(professorPresence, fullname, new_entity);
                 break;
             }
             case TA: {
                 ((Faculty *) new_entity)->trained_for = head;
                 pushBack(TAs, new_entity);
+                precalculatedHash = ((Faculty *) new_entity)->hash;
                 insert(TAPresence, fullname, new_entity);
                 break;
             }
@@ -1495,8 +1511,8 @@ hash_table_init(HashTable *table, size_t capacity, int (*key_cmp)(void *, void *
 }
 
 void insert(HashTable *table, char *key, void *value) {
-    ull index = hash(key) % table->capacity;
-
+    ull index = ((precalculatedHash == -1) ? hash(key) : precalculatedHash) % table->capacity;
+    precalculatedHash = -1;
     HashNode *node = (table->datalist[index]).head;
 
     HashNode *item = (HashNode *) malloc(sizeof(HashNode));
@@ -1592,7 +1608,9 @@ void init_datalist(HashList *datalist, size_t capacity) {
 
 //WARNING! Returns a pointer to actual node in table
 HashNode *find_node(HashTable *table, char *key) {
-    HashNode *node = table->datalist[hash(key) % table->capacity].head;
+    HashNode *node = table->datalist[((precalculatedHash == -1) ? hash(key) : precalculatedHash) %
+                                     table->capacity].head;
+    precalculatedHash = -1;
     while (node != NULL) {
         if (table->key_comparator(key, node->key) == 0) {
             return node;
@@ -1646,6 +1664,7 @@ void new_faculty(Faculty *new, char *fullname) {
     if (new == NULL)
         return;
     new->fullname = fullname;
+    new->hash = hash(fullname);
 }
 
 void new_student(Student *new, char *fullname, char *ID) {
@@ -1683,7 +1702,6 @@ void new_CourseGenetic(CourseGenetic *new, Subject *subject) {
 
 ///Destructors//
 void del_subject(Subject *subj) {
-//    freeList(subj->required_by, (void (*)(void *)) del_student); // TODO: check Вроде, студенты отдельно чистятся
     freeListSaveData(subj->required_by);
     free(subj->name);
 }
@@ -1799,9 +1817,6 @@ int errorCourse(CourseGenetic *course, char/*Bool*/ print) {
                 Student *student = getFromList(course->subject->required_by, i);
                 pushBack(student->lacking_courses, course);
 
-//                printf("%s is lacking %s.\n",
-//                       ((Student *) (getFromList(course->subject->required_by, i)))->name,
-//                       course->subject->name);
             }
         }
         return (lacking_students > 0) ? lacking_students * STUDENT_LACKING_CLASS : 0;
@@ -1811,9 +1826,6 @@ int errorCourse(CourseGenetic *course, char/*Bool*/ print) {
             for (int i = 0; i < course->subject->required_by->size; ++i) {
                 Student *student = getFromList(course->subject->required_by, i);
                 pushBack(student->lacking_courses, course);
-//                printf("%s is lacking %s.\n",
-//                       ((Student *) (getFromList(course->subject->required_by, i)))->name,
-//                       course->subject->name);
             }
         }
         return course->subject->required_by->size * STUDENT_LACKING_CLASS + COURSE_NOT_RUN;
