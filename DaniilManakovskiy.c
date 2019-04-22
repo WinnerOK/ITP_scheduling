@@ -7,26 +7,6 @@
 #include <ctype.h>          //isdigit, isalpha, isalnum functions
 #include <stdarg.h>         //For variadic functions
 
-/* A comment regarding one of the last assignment change (21.04.19)
- * From that moment any duplicates in the list of courses must be considered as invalid input
- * What is "Invalid input"? I think it is a situation, when you lose some information because it does not correspond
- * To the input pattern.
- *
- * It is not the case in our assignment:
- * Let consider the pattern for professor
- * <first_name> <last_name> <list of courses that professors>
- * each block has its own restrictions (that is why I somehow cannot say anything against changes, but still want
- * to tell my opinion)
- *
- * The list itself, in fact, can be a set, and must be parsed as set. The information, that this list gives is
- * "Can professor/TA teach the course wihout a fine?" or "Does student want to enroll to the course"?
- *
- * And it, in fact, tells such information even if it has not unique elements. Therefore shouldn't be considered
- * as invalid input.
- *
- * I did not want to offend anybody by this message. It is just my opinion about last changes.
- */
-
 /*
  * The task is being solved by genetic algorithm.
  *
@@ -313,7 +293,7 @@ void performEvolutionStep();
 void makeChild(Individual *child, Individual *first_parent, Individual *second_parent, HashTable *TAbyName,
                HashTable *ProfbyName);
 
-void printReport(Individual* individual);
+void printReport(Individual *individual);
 /////////////////////////////////Input Validation/////////////////////////////////
 
 char /*Bool*/ checkID(char *id);
@@ -357,6 +337,8 @@ List *profs = NULL;
 List *tas = NULL;
 List *students = NULL;
 int input_status;
+
+List *student_ids = NULL;
 
 //During the evolution there is a lot of inserting/getting element from hashTables.
 //before invoking a call to hashTable, if the hash to key has already been calculated
@@ -456,8 +438,9 @@ void introduce() {
 
 int main() {
 //    introduce();
-
-    srand((unsigned int) time(NULL));
+    size_t seed = 1555950238; //time(NULL);
+//    fprintf(stderr, "%llu\n", seed);
+    srand(seed);
     global_buffer = (char *) malloc(MAX_BUFFER_SIZE);
     printEmail();
 
@@ -497,6 +480,8 @@ int main() {
             TAPresence = (HashTable *) malloc(sizeof(HashTable));
             hash_table_init(TAPresence, 5, cmpStr);
 
+            student_ids = malloc(sizeof(List));
+            initList(student_ids);
 
             if (parseInput(subjects, profs, tas, students) != 0) {
                 printf("Invalid input.");
@@ -518,11 +503,13 @@ int main() {
                 freeList(profs, (void (*)(void *)) del_faculty);
                 freeList(tas, (void (*)(void *)) del_faculty);
                 freeList(students, (void (*)(void *)) del_student);
+                freeList(student_ids, NULL);
                 free_hash_table(TAPresence);
                 free_hash_table(professorPresence);
                 free_hash_table(subjectByName);
                 continue;
             }
+            freeList(student_ids, NULL);
 
             free_hash_table(TAPresence);
             free_hash_table(professorPresence);
@@ -535,7 +522,7 @@ int main() {
             for (int step = 0; step < EVOLUTION_STEPS; ++step) {
                 performEvolutionStep();
 
-                fprintf(stderr, "%d - %d\n", step, population[0].error);
+//                fprintf(stderr, "%d - %d\n", step, population[0].error);
 
                 /*
                  * in order to reduce time consuming, evolution stops after MAX_STEPS_WITHOUT_IMPROVEMENT steps if the
@@ -964,7 +951,7 @@ void makeChild(Individual *child, Individual *first_parent, Individual *second_p
 }
 
 //print a report for given individual
-void printReport(Individual* individual) {
+void printReport(Individual *individual) {
     for (int subj = 0; subj < subjects->size; ++subj) {
         if (willRun(&(individual->schedule[subj]))) {
             printf("%s\n%s\n",
@@ -1153,8 +1140,14 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                 return 447;
             }
 
-            student_id = malloc(strlen(token) + 1);
-            strcpy(student_id, token);
+            if (isInList(student_ids, token, cmpStr) == True){ // If id is not unique
+                freeList(head, NULL);
+                freeAll(3, name, surname, fullname);
+                return 448;
+            }
+
+            student_id = strdup(token);
+            pushBack(student_ids, strdup(student_id));
             token = strtok_single(NULL, " ");
             if (!isValid(token)) {
                 freeList(head, NULL);
