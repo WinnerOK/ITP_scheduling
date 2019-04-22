@@ -1,11 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <limits.h>
-#include <time.h>
-#include <errno.h>
-#include <ctype.h>
-#include <stdarg.h>
+#include <limits.h>         //To compare long numbers with INT_MAX to prevent overflow
+#include <time.h>           //To provide not so bad seed for random
+#include <errno.h>          //Overflow flag
+#include <ctype.h>          //isdigit, isalpha, isalnum functions
+#include <stdarg.h>         //For variadic functions
 
 /* A comment regarding one of the last assignment change (21.04.19)
  * From that moment any duplicates in the list of courses must be considered as invalid input
@@ -27,6 +27,19 @@
  * I did not want to offend anybody by this message. It is just my opinion about last changes.
  */
 
+/*
+ * The task is being solved by genetic algorithm.
+ *
+ * Population - set of individuals
+ * Individual - one particular solution. Individual consists of genes
+ * Gene - one distribution for a particular course
+ *
+ * The idea is to generate a random population and try to improve it in the next generation.
+ * BEST_FIT_PERCENTAGE of individuals goes to the new population directly
+ * The population is being reproducted by crossing GOOD_FIT_PERCENTAGE of individuals
+ * The child's genes are the mixes of parent's. As a result, program finds available best distribution in a
+ * reasonable amount of time
+ */
 
 /////////////////////////////////Constants, types/////////////////////////////////
 
@@ -300,7 +313,7 @@ void performEvolutionStep();
 void makeChild(Individual *child, Individual *first_parent, Individual *second_parent, HashTable *TAbyName,
                HashTable *ProfbyName);
 
-void printReport();
+void printReport(Individual* individual);
 /////////////////////////////////Input Validation/////////////////////////////////
 
 char /*Bool*/ checkID(char *id);
@@ -345,6 +358,9 @@ List *tas = NULL;
 List *students = NULL;
 int input_status;
 
+//During the evolution there is a lot of inserting/getting element from hashTables.
+//before invoking a call to hashTable, if the hash to key has already been calculated
+//it is being added to this variable, otherwise hash will be recalculated.
 ull precalculatedHash = -1;
 Individual *population = NULL;
 
@@ -358,6 +374,7 @@ void trim() {
     if (global_buffer[strlen(global_buffer) - 1] == '\n') global_buffer[strlen(global_buffer) - 1] = '\0';
 }
 
+//Comparator for different types in order to improve readability further
 int cmpStr(void *s1, void *s2) {
     return strcmp((char *) s1, (char *) s2);
 }
@@ -382,6 +399,7 @@ void swap(void **pa, void **pb) {
     *pb = pc;
 }
 
+//Generates an array of shuffled links to original array. Used to add randomness into generating of first population
 CourseGenetic **shuffle(CourseGenetic *arr, int n) {
     CourseGenetic **result = (CourseGenetic **) malloc(subjects->size * sizeof(CourseGenetic *));
 
@@ -442,9 +460,8 @@ int main() {
     srand((unsigned int) time(NULL));
     global_buffer = (char *) malloc(MAX_BUFFER_SIZE);
     printEmail();
-    int max_test = findMaximumInputFile();
-//    solve(findMaximumInputFile());
 
+    int max_test = findMaximumInputFile(); //Maximum found test in the current working directory (CWD)
     char inputFile[FILENAME_SIZE];
     char outputFile[FILENAME_SIZE];
     for (int test = 1; test <= max_test; ++test) {
@@ -453,7 +470,7 @@ int main() {
         snprintf(inputFile, FILENAME_SIZE, "input%d.txt", test);
         snprintf(outputFile, FILENAME_SIZE, "DaniilManakovskiyOutput%d.txt", test);
         // if input file exist, solve the problem, otherwise print error
-        freopen(outputFile, "w", stdout);
+        freopen(outputFile, "w", stdout); // since we know last existing file, we must generate all outputs before
         if (freopen(inputFile, "r", stdin) != NULL) {
 
             int current_result = -1;
@@ -511,13 +528,19 @@ int main() {
             free_hash_table(professorPresence);
             free_hash_table(subjectByName);
 
-//            printf("\n------Done with input------\n");
+            // Input finished. Starting solving - generate random population
             generateInitialPopulation();
+
 
             for (int step = 0; step < EVOLUTION_STEPS; ++step) {
                 performEvolutionStep();
 
-//                fprintf(stderr,"%d - %d\n", step, population[0].error);
+                fprintf(stderr, "%d - %d\n", step, population[0].error);
+
+                /*
+                 * in order to reduce time consuming, evolution stops after MAX_STEPS_WITHOUT_IMPROVEMENT steps if the
+                 * best result has not been improved or if badness points  = 0 - there is no way to find better answer
+                 */
                 if (population[0].error == current_result) {
                     ++steps_without_improvement;
                 } else {
@@ -531,7 +554,7 @@ int main() {
                 }
             }
             //////////////////////////////// All evolution steps done///////////////////////////////////////////////////
-            printReport();
+            printReport(&population[0]);
 
 
 //Population free start
@@ -569,6 +592,7 @@ void printEmail() {
     fclose(email);
 }
 
+//Calculates how many tests are to pass
 int findMaximumInputFile() {
     char num[FILENAME_SIZE];
     for (int test = MAXN; test >= 1; --test) {
@@ -596,7 +620,7 @@ void generateInitialPopulation() {
         List *allTA = malloc(sizeof(List));
         initList(allTA);
 
-        //Pools contain objects of professor/ta that is available to any course
+        //Pools contain objects of professor/ta that are available to any course
         List *profPool = malloc(sizeof(List));
         initList(profPool);
 
@@ -765,7 +789,6 @@ void performEvolutionStep() {
         free_hash_table(ProfbyName);
         free_hash_table(TAbyName);
 
-
         child->error = error(child, False);
         new_population[BEST_COUNT + child_no] = *child;
         free(child); // этот объект и объект выше - разные, но внутри ссылки одинаковые.
@@ -791,8 +814,15 @@ void performEvolutionStep() {
     qsort(population, POPULATION_SIZE, sizeof(Individual), (__compar_fn_t) cmpIndividuals);
 }
 
+
 void makeChild(Individual *child, Individual *first_parent, Individual *second_parent, HashTable *TAbyName,
                HashTable *ProfbyName) {
+    /*
+     * For each course add available assistants from the first parent, append from the second, if need add from
+     * the current pool.
+     * Since in 2 parents TA distribution is likely to be different, the resulting distribution will be some new,
+     * unlikely seen before one
+     */
     for (int i = 0; i < subjects->size; ++i) {
         CourseGenetic *course = &(child->schedule[i]);
 
@@ -875,7 +905,12 @@ void makeChild(Individual *child, Individual *first_parent, Individual *second_p
         }
         freeListSaveData(availableAssistants);
 
-        //TA assigned; Assign professor:
+        /*
+         * For that moment TA distribution is finished.
+         * With some chance choose what parent will give its professor, or mutation will happen
+         */
+        if (child->professors->size == 0) continue;
+
         double probability = randDouble();
         Individual *emitter = NULL;
         if (probability < TAKE_FIRST_PARENT_GENE) {
@@ -884,18 +919,23 @@ void makeChild(Individual *child, Individual *first_parent, Individual *second_p
             emitter = second_parent;
         }
 
-        if (child->professors->size == 0) continue;
 
-        if (emitter == NULL) {
+        if (emitter == NULL) { // do mutation -> try to assign random prof
             int randomInd = rand() % child->professors->size;
             ProfessorGenetic *prof = getFromList(child->professors, randomInd);
-            AssignTo(prof, course);
-            removeByKey(child->professors, prof, (int (*)(void *, void *)) cmpProf);
-            remove_el(ProfbyName, prof->professor->fullname);
+            if (isAvailable(prof, course)) {
+                AssignTo(prof, course);
+
+                if (prof->isBusy) {
+                    removeByKey(child->professors, prof, (int (*)(void *, void *)) cmpProf);
+                    remove_el(ProfbyName, prof->professor->fullname);
+                }
+            }
+
             continue;
         }
 
-
+        // If parent was chosen, find corresponding prof from child and try to assign it, otherwise do mutation
         ProfessorGenetic *parentProf = emitter->schedule[i].prof;
         if (parentProf == NULL) {
             continue;
@@ -904,45 +944,42 @@ void makeChild(Individual *child, Individual *first_parent, Individual *second_p
             ProfessorGenetic *childProf = get_el(ProfbyName, parentProf->professor->fullname);
             if (childProf == NULL) {
                 if (child->professors->size == 0) continue;
+
                 int randomInd = rand() % child->professors->size;
                 childProf = getFromList(child->professors, randomInd);
 
-                AssignTo(childProf, course);
+            }
 
-                if (childProf->isBusy) {
-                    removeFromList(child->professors, randomInd);
-                    remove_el(ProfbyName, childProf->professor->fullname);
-                }
-
-            } else {
+            if (isAvailable(childProf, course)) {
                 AssignTo(childProf, course);
                 if (childProf->isBusy) {
                     removeByKey(child->professors, childProf, (int (*)(void *, void *)) cmpProf);
                     remove_el(ProfbyName, childProf->professor->fullname);
                 }
+
             }
+
         }
-
-
     }
 }
 
-void printReport() {
+//print a report for given individual
+void printReport(Individual* individual) {
     for (int subj = 0; subj < subjects->size; ++subj) {
-        if (willRun(&(population[0].schedule[subj]))) {
+        if (willRun(&(individual->schedule[subj]))) {
             printf("%s\n%s\n",
-                   population[0].schedule[subj].subject->name,
-                   population[0].schedule[subj].prof->professor->fullname
+                   individual->schedule[subj].subject->name,
+                   individual->schedule[subj].prof->professor->fullname
             );
-            printList(population[0].schedule[subj].TAs, -1, printTAGenetic);
-            printList(population[0].schedule[subj].subject->required_by,
-                      population[0].schedule[subj].subject->allowed_students,
+            printList(individual->schedule[subj].TAs, -1, printTAGenetic);
+            printList(individual->schedule[subj].subject->required_by,
+                      individual->schedule[subj].subject->allowed_students,
                       printStudent);
             printf("\n");
         }
     }
-    error(&(population[0]), True);
-    printf("Total score is %d.", population[0].error);
+    error(individual, True);
+    printf("Total score is %d.", individual->error);
 }
 
 int parseInput(List *subjects, List *profs, List *TAs, List *students) {
@@ -985,7 +1022,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
         ++cursor;
         long nums[2];
-        // if 2 number have not been found or they overflowed
+        // if 2 number have not been found or they overflowed or found more than 2 - error
         if (findAllNumbers(cursor, 2, nums) != 0) {
             free(course_name);
             return 30;
@@ -1021,8 +1058,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
     input_status = PROFESSOR; // what group is being read
 
     while (getline(&global_buffer, &MAX_BUFFER_SIZE, stdin) != -1) {
-        // Performs changing of group of people Profs -> TAs
         trim();
+        // Performs changing of group of people Profs -> TAs
         if (strcmp(global_buffer, TA_DELIMITER) == 0) {
             if (input_status == PROFESSOR) {
                 input_status = TA;
@@ -1049,7 +1086,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         // tokenize given string by spaces
         // the format is always like {fullname} {surname} <{ID}> {List of subjects}
         char *token = strtok_single(global_buffer, " ");
-        if (!isValid(token)) {
+        if (!isValid(token)) { // token is invalid is it is NULL (the string ended) or "\0" (delimiter repeated)
             return 43;
         }
 
@@ -1081,6 +1118,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
         char *fullname = (char *) malloc((2 + strlen(name) + strlen(surname)) * sizeof(char));
         getFullName(fullname, name, surname);
         switch (input_status) {
+            //check if professor/TA is unique
             case PROFESSOR: {
                 if (get_el(professorPresence, fullname) != NULL) {
                     freeAll(3, name, surname, fullname);
@@ -1143,6 +1181,8 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
                     free(student_id);
                 return 47;
             }
+            //uncomment this to revert changes
+            //Checks whether new token is unique in the list
             if (isInList(head, token, (int (*)(void *, void *)) strcmp) == True) {
                 freeList(head, NULL);
                 freeAll(3, name, surname, fullname);
@@ -1154,6 +1194,7 @@ int parseInput(List *subjects, List *profs, List *TAs, List *students) {
             strcpy(tmp, token);
             pushBack(head, tmp);
 
+            //Comment block above and uncomment this to revert last assignment change
 //            if (input_status != STUDENT) {
 //                char *tmp = malloc(strlen(token) + 1);
 //                strcpy(tmp, token);
