@@ -455,6 +455,7 @@ int main() {
         // if input file exist, solve the problem, otherwise print error
         freopen(outputFile, "w", stdout); // since we know last existing file, we must generate all outputs before
         if (freopen(inputFile, "r", stdin) != NULL) {
+//            fprintf(stderr, "test: %d\n", test);
 
             int current_result = -1;
             int steps_without_improvement = 0;
@@ -489,16 +490,18 @@ int main() {
                     case PROFESSOR:
                     case TA: {
                         del_faculty(new_entity);
+                        free(new_entity);
                         break;
                     }
                     case STUDENT: {
                         del_student(new_entity);
+                        free(new_entity);
                         break;
                     }
                     default: {
                     }
                 }
-                free(new_entity);
+
                 freeList(subjects, (void (*)(void *)) del_subject);
                 freeList(profs, (void (*)(void *)) del_faculty);
                 freeList(tas, (void (*)(void *)) del_faculty);
@@ -972,7 +975,7 @@ void printReport(Individual *individual) {
 int parseInput(List *subjects, List *profs, List *TAs, List *students) {
 
     //get last symbol of the file. If it is a newline - immediately break
-    char last_char;
+    char last_char = 't'; // in case the file is empty.
     fseek(stdin, -1, SEEK_END);
     scanf("%c", &last_char);
     if (last_char == *"\n")
